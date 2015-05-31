@@ -1,11 +1,12 @@
-
-#include <stdio.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <fcntl.h>
+extern "C" {
+    #include <stdio.h>
+    #include <stdint.h>
+    #include <unistd.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <sys/mman.h>
+    #include <fcntl.h>
+};
 #include "utils.h"
 #include "msg_parser.h"
 
@@ -26,9 +27,7 @@ static uint8_t * msg_parser_mmap(int fd, msg_address_t start_addr, msg_address_t
         return NULL;
     } else {
         rv += (uint32_t)(start_addr & ~PAGE_MASK);
-        if (!(rv==(uint8_t *)(intptr_t)start_addr)) {
-            return NULL;
-        }
+        assert(rv==(uint8_t *)(intptr_t)start_addr, ASSERT_FATAL);
         return rv;
     }
 }
@@ -47,7 +46,6 @@ void msg_parser_init()
 static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
 {
     int mem_fd;
-    void * ptr;
     if (g_msg_parser_ctxt->start_addr || g_msg_parser_ctxt->end_addr) {
         msg_parser_munmap(g_msg_parser_ctxt->start_addr, g_msg_parser_ctxt->end_addr);
     }
@@ -56,22 +54,25 @@ static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
     mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
     if (mem_fd < 0) {
         perror("open(/dev/mem, O_RDWR | O_SYNC) failed");
+        assert(0, ASSERT_NONFATAL);
+        g_msg_parser_ctxt->parser_state = MSG_PARSER_UNINITIALIZED_STATE;
         return false;
     }
-    ptr = msg_parser_mmap(mem_fd, start, end);
+    msg_parser_mmap(mem_fd, start, end);
     close(mem_fd);
-    if (ptr==NULL) {
-        return false;
-    } else {
-        return true;
-    }
+    g_msg_parser_ctxt->parser_state = MSG_PARSER_INITIALIZED_STATE;
+    return true;
 }
 
 static bool check_address(msg_address_t addr)
 {
-    if ((addr > g_msg_parser_ctxt->start_addr) && 
-        (addr < g_msg_parser_ctxt->end_addr)) {
-        return true;
+    if (g_msg_parser_ctxt->parser_state==MSG_PARSER_INITIALIZED_STATE) {
+        if ((addr > g_msg_parser_ctxt->start_addr) && 
+            (addr < g_msg_parser_ctxt->end_addr)) {
+            return true;
+        } else {
+            return false;
+        }
     } else {
         return false;
     }
@@ -84,7 +85,7 @@ static void msg_parser_resp(msg_handle_type_t msg_handle,
                      msg_val_t ret_val = 0)
 {
     msg_resp_t *resp;
-    assert(g_msg_parser_ctxt->msg_resp_buffer);
+    assert(g_msg_parser_ctxt->msg_resp_buffer, ASSERT_FATAL);
     resp = (msg_resp_t *) g_msg_parser_ctxt->msg_resp_buffer;
     resp->handle = msg_handle;
     resp->req_type = msg_req_type;
@@ -114,7 +115,7 @@ static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
             }
             break;
         default :
-            assert(0);
+            assert(0, ASSERT_FATAL);
     }
     return ret_val;
 }
@@ -142,7 +143,7 @@ static uint32_t write_value(msg_address_t addr, msg_val_t val, uint8_t val_size)
             }
             break;
         default :
-            assert(0);
+            assert(0, ASSERT_FATAL);
     }
     return ret_val;
 }
@@ -201,7 +202,7 @@ void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
                         break;
                     break;
                 default:
-                    assert(true);
+                    assert(0, ASSERT_FATAL);
             }
             msg_parser_resp(req->handle, req->req_type, STATUS_OK,
                     req->addr, ret_msg_val);

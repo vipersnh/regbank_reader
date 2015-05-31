@@ -31,7 +31,7 @@ class server {
     public :
         static void * start(void *);
         server(uint32_t udp_port, uint32_t tcp_port, uint8_t udp_repeat_timeout, 
-                uint8_t tcp_alive_timeout);
+                uint8_t tcp_alive_timeout, const char *);
         void stop();
     private :
         int server_socket_handle, client_socket_handle;
@@ -50,7 +50,7 @@ class server {
         pthread_mutex_t lock;
         server_connection_status connection_status;
         server_connection_status get_connection_status();
-        void gethost_itf_ipaddr(char *ip_addr, uint16_t len, std::string itf);
+        void gethost_itf_ipaddr(char *ip_addr, uint16_t len, const char * itf);
         void set_connection_status(server_connection_status status);
         void udp_repeater_loop();
         void tcp_processor_loop();

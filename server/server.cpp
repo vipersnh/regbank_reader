@@ -1,30 +1,31 @@
-
+extern "C" {
+    #include <stdio.h>
+    #include <pthread.h>
+    #include <time.h>
+    #include <stropts.h>
+    #include <stdlib.h>
+    #include <sys/socket.h>
+    #include <sys/ioctl.h>
+    #include <ifaddrs.h>
+    #include <linux/netdevice.h>
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <unistd.h>
+};
 #include <iostream>
-#include <stdio.h>
 #include <cstring>
 #include <string>
-#include <assert.h>
-#include <pthread.h>
-#include <time.h>
-#include <stropts.h>
-#include <stdlib.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <ifaddrs.h>
-#include <linux/netdevice.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <unistd.h>
 #include "msg_parser.h"
+#include "utils.h"
 #include "server.h"
 
 
 server::server(uint32_t udp_port, uint32_t tcp_port, 
-        uint8_t udp_repeat_timeout, uint8_t tcp_alive_timeout)
+        uint8_t udp_repeat_timeout, uint8_t tcp_alive_timeout, const char * itf)
 {
     this->server_udp_transmit_port   = udp_port;
     this->server_tcp_listen_port     = tcp_port;
-    assert(udp_repeat_timeout>=UDP_REPEAT_TIMEOUT_THRESHOLD);
+    assert(udp_repeat_timeout>=UDP_REPEAT_TIMEOUT_THRESHOLD, ASSERT_NONFATAL);
     this->udp_repeat_timeout         = udp_repeat_timeout;
     this->tcp_alive_timeout          = tcp_alive_timeout;
     this->connection_status          = UNCONNECTED;
@@ -88,7 +89,7 @@ void server::set_connection_status(server_connection_status status)
     pthread_mutex_unlock(&this->lock);
 }
 
-void server::gethost_itf_ipaddr(char *ip_addr, uint16_t len, std::string itf)
+void server::gethost_itf_ipaddr(char *ip_addr, uint16_t len, const char * itf)
 {
     struct ifaddrs * ifAddrStruct=NULL;
     struct ifaddrs * ifa=NULL;
@@ -104,7 +105,7 @@ void server::gethost_itf_ipaddr(char *ip_addr, uint16_t len, std::string itf)
             tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
             char addressBuffer[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-            if (strcmp(ifa->ifa_name, "eth0")==0) {
+            if (strstr(ifa->ifa_name, itf)>0 || strstr(ifa->ifa_name, itf)>0) {
                 strcpy(ip_addr, addressBuffer);
                 printf("\n%s\n", ip_addr);
             }
@@ -112,7 +113,7 @@ void server::gethost_itf_ipaddr(char *ip_addr, uint16_t len, std::string itf)
     }
     if (ifAddrStruct!=NULL) freeifaddrs(ifAddrStruct);
     if ((strlen(ip_addr)==0) && (strlen(ip_addr)<len)) {
-        assert(0);
+        assert(0, ASSERT_FATAL);
     }
 }
 
@@ -141,7 +142,7 @@ void server::udp_repeater_loop()
     int yes = 1;
 
     this->udp_socket_handle = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    assert(this->udp_socket_handle!=0);
+    assert(this->udp_socket_handle!=0, ASSERT_FATAL);
     inet_pton(AF_INET, "255.255.255.255", &udp_socket_addr.sin_addr.s_addr);
     udp_socket_addr.sin_port = htons(this->server_udp_transmit_port);
     udp_socket_addr.sin_family = PF_INET;
@@ -188,12 +189,12 @@ void server::tcp_processor_loop()
     server_socket_addr.sin_addr.s_addr = inet_addr(hostIpAddr);
     server_socket_addr.sin_port = htons(this->server_tcp_listen_port);
     this->server_socket_handle = socket(AF_INET, SOCK_STREAM, 0);
-    assert(this->server_socket_handle!=0);
+    assert(this->server_socket_handle!=0, ASSERT_FATAL);
 
     status |= bind(this->server_socket_handle, (struct sockaddr *) &server_socket_addr, 
         sizeof(server_socket_addr));
 
-    assert(status==0);
+    assert(status==0, ASSERT_FATAL);
     /* Listen on TCP socket with max of 1 pending connection */
     status = listen(this->server_socket_handle, 1);
 
@@ -202,7 +203,7 @@ void server::tcp_processor_loop()
     while(1) {
         this->client_socket_handle = accept(this->server_socket_handle,
             (struct sockaddr *)&client_socket_addr, &clilen);
-        assert(this->client_socket_handle!=0);
+        assert(this->client_socket_handle!=0, ASSERT_FATAL);
         FD_ZERO(&sockets_set);
         FD_SET(this->client_socket_handle, &sockets_set);
         this->set_connection_status(CONNECTED);

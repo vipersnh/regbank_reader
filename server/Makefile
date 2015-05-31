@@ -1,4 +1,4 @@
-SERVER_CXX_SRCS        := main.cpp server.cpp msg_parser.cpp
+SERVER_CXX_SRCS        := main.cpp server.cpp msg_parser.cpp utils.cpp
 SERVER_INC			   := ./
 
 X86_M32_CC 		:= 	gcc
@@ -12,16 +12,18 @@ X86_M32_CXXSRCS := $(SERVER_CXX_SRCS)
 X86_M32_LDFLAGS := -lpthread
 X86_M32_TARGET  :=  server.exe
 
-ZYNQ_A9_CC 		:= 	arm-none-linux-gnueabi-gcc
-ZYNQ_A9_CXX 	:= 	arm-none-linux-gnueabi-g++
-ZYNQ_A9_LINK 	:= 	arm-none-linux-gnueabi-g++
-ZYNQ_A9_CFLAGS  := -Wall -g -pthread -m32
-ZYNQ_A9_CXXFLAGS  := -Wall -g -pthread
-ZYNQ_A9_INC	    := $(SERVER_INC)
-ZYNQ_A9_CSRCS   := 
-ZYNQ_A9_CXXSRCS := $(SERVER_CXX_SRCS)
-ZYNQ_A9_LDFLAGS := -lpthread
-ZYNQ_A9_TARGET  :=  server.elf
+
+
+ARM_M32_CC 		:= 	arm-linux-gnueabi-gcc
+ARM_M32_CXX 	:= 	arm-linux-gnueabi-g++
+ARM_M32_LINK 	:= 	arm-linux-gnueabi-g++
+ARM_M32_CFLAGS  := -Wall -static -static-libgcc -g -pthread -march=armv7-a -mfloat-abi=softfp
+ARM_M32_CXXFLAGS  :=
+ARM_M32_INC	    := $(SERVER_INC)
+ARM_M32_CSRCS   := 
+ARM_M32_CXXSRCS := $(SERVER_CXX_SRCS)
+ARM_M32_LDFLAGS := -static -static-libgcc -lpthread -lc
+ARM_M32_TARGET  :=  server.elf
 
 
 ## Common make
