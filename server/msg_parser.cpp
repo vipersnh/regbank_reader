@@ -46,6 +46,12 @@ void msg_parser_init()
 static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
 {
     int mem_fd;
+#if 1
+    g_msg_parser_ctxt->start_addr = start;
+    g_msg_parser_ctxt->end_addr   = end;
+    g_msg_parser_ctxt->parser_state = MSG_PARSER_INITIALIZED_STATE;
+    return true;
+#endif
     if (g_msg_parser_ctxt->start_addr || g_msg_parser_ctxt->end_addr) {
         msg_parser_munmap(g_msg_parser_ctxt->start_addr, g_msg_parser_ctxt->end_addr);
     }
@@ -67,8 +73,8 @@ static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
 static bool check_address(msg_address_t addr)
 {
     if (g_msg_parser_ctxt->parser_state==MSG_PARSER_INITIALIZED_STATE) {
-        if ((addr > g_msg_parser_ctxt->start_addr) && 
-            (addr < g_msg_parser_ctxt->end_addr)) {
+        if ((addr >= g_msg_parser_ctxt->start_addr) && 
+            (addr <= g_msg_parser_ctxt->end_addr)) {
             return true;
         } else {
             return false;
@@ -98,6 +104,9 @@ static void msg_parser_resp(msg_handle_type_t msg_handle,
 static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
 {
     msg_val_t ret_val = -1;
+#if 1
+    return 0xABCDEFA;
+#endif
     switch (val_size) {
         case 1:
             {
@@ -123,6 +132,9 @@ static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
 static uint32_t write_value(msg_address_t addr, msg_val_t val, uint8_t val_size)
 {
     msg_val_t ret_val = -1;
+#if 1
+    return val & 0xFFFFFFFE;
+#endif
     switch (val_size) {
         case 1:
             {
@@ -167,7 +179,9 @@ void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
     }
 #endif
     req = (msg_req_t *) msg_req_buffer;
-    if (req->req_type==MEM_MAP_SPACE_REQ) {
+    if (req->req_type==KEEP_ALIVE_REQ) {
+        msg_parser_resp(req->handle, req->req_type, STATUS_OK);
+    } else if (req->req_type==MEM_MAP_SPACE_REQ) {
         msg_status_type_t status;
         msg_address_t start_addr, end_addr;
         start_addr = req->start_addr;
@@ -200,7 +214,6 @@ void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
                 case WORD_WRITE_REQ:
                         ret_msg_val = write_value(req->addr, req->value, 4);   
                         break;
-                    break;
                 default:
                     assert(0, ASSERT_FATAL);
             }

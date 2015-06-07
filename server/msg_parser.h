@@ -37,6 +37,7 @@ typedef enum {
  * WORD_READ_REQ        : handle = {32 bit random handle}, type = {HALF_WORD_READ_REQ}, val = {address}
  * WORD_WRITE_REQ       : handle = {32 bit random handle}, type = {HALF_WORD_WRITE_REQ}, val = {address, val}
  * MEM_MAP_SPACE_REQ    : handle = {32 bit random handle}, type = {MEM_MAP_SPACE_REQ}, val = {address_start, address_end}
+ * KEEP_ALIVE_REQ       : handle = {32 bit random handle}, type = {KEEP_ALIVE_REQ}
  */
 
 typedef enum {
@@ -47,6 +48,7 @@ typedef enum {
     WORD_READ_REQ,
     WORD_WRITE_REQ,
     MEM_MAP_SPACE_REQ,
+    KEEP_ALIVE_REQ,
 } msg_req_type_enum;
 
 typedef enum {
@@ -63,7 +65,8 @@ typedef enum {
  * HALF_WORD_WRITE_REQ  : handle = {32 bit handle from req}, req_type = {HALF_WORD_WRITE_REQ}, status = {status}, val = {address, value}
  * WORD_READ_REQ        : handle = {32 bit handle from req}, req_type = {WORD_READ_REQ}, status = {status}, val = {address, value}
  * WORD_WRITE_REQ       : handle = {32 bit handle from req}, req_type = {WORD_WRITE_REQ}, status = {status}, val = {address, value}
- * MEM_MAP_SPACE_REQ    :
+ * MEM_MAP_SPACE_REQ    : handle = {32 bit handle from req}, req_type = {MEM_MAP_SPACE_REQ}, status = {status}
+ * KEEP_ALIVE_REQ       : handle = {32 bit handle from req}, req_type = {KEEP_ALIVE_REQ}, status = {STATUS_OK}
  */
 
 typedef struct {

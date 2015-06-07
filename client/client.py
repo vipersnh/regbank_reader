@@ -1,4 +1,5 @@
 from pdb import set_trace
+from PyQt4.QtCore import QMutex
 from ctypes import *
 import socket;
 import pprint;
@@ -13,7 +14,8 @@ HALF_WORD_READ_REQ,
 HALF_WORD_WRITE_REQ,
 WORD_READ_REQ,
 WORD_WRITE_REQ,
-MEM_MAP_SPACE_REQ) = range(7);
+MEM_MAP_SPACE_REQ,
+KEEP_ALIVE_REQ) = range(8);
 
 (STATUS_OK,
 STATUS_FAIL,
@@ -46,6 +48,7 @@ class client_t:
         self.server_connected = False;
         self.server_socket_handle = None;
         self.local_ip         = "0.0.0.0";
+        self.sync_mutex = QMutex();
     
     def get_udp_message(self) :
         sock = socket.socket(socket.AF_INET, 
@@ -72,6 +75,7 @@ class client_t:
             self.server_socket_handle.close();
 
     def query_server(self, msg) :
+        self.sync_mutex.lock();
         msg_bytes = bytearray(msg);
         msg_len = c_ushort(len(msg_bytes));
         msg_bytes[:0] = bytes(msg_len);
@@ -81,9 +85,12 @@ class client_t:
         resp = self.server_socket_handle.recv(msg_len);
         resp_struct = msg_resp_t.from_buffer(bytearray(resp));
         self.print_resp(resp_struct);
+        self.sync_mutex.unlock();
         return resp_struct;
     
     def print_resp(self, resp) :
+        if resp.req_type==KEEP_ALIVE_REQ:
+            return;
         for field_name, field_type in resp._fields_ :
             print(field_name ," : ", getattr(resp, field_name));
 
