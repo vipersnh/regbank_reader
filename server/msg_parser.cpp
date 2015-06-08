@@ -129,35 +129,27 @@ static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
     return ret_val;
 }
 
-static uint32_t write_value(msg_address_t addr, msg_val_t val, uint8_t val_size)
+void write_value(msg_address_t addr, msg_val_t val, uint8_t val_size)
 {
-    msg_val_t ret_val = -1;
-#if 1
-    return val & 0xFFFFFFFE;
-#endif
     switch (val_size) {
         case 1:
             {
                 *(uint8_t*)(intptr_t)addr = val;
-                ret_val = *(uint8_t*)(intptr_t)addr;
             }
             break;
         case 2:
             {
                 *(uint16_t*)(intptr_t)addr = val;
-                ret_val = *(uint16_t*)(intptr_t)addr;
             }
             break;
         case 4:
             {
                 *(uint32_t*)(intptr_t)addr = val;
-                ret_val = *(uint32_t*)(intptr_t)addr;
             }
             break;
         default :
             assert(0, ASSERT_FATAL);
     }
-    return ret_val;
 }
 
 void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
@@ -200,19 +192,19 @@ void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
                         ret_msg_val = read_value(req->addr, 1);   
                         break;
                 case BYTE_WRITE_REQ:
-                        ret_msg_val = write_value(req->addr, req->value, 1);   
+                        write_value(req->addr, req->value, 1);   
                         break;
                 case HALF_WORD_READ_REQ:
                         ret_msg_val = read_value(req->addr, 2);   
                         break;
                 case HALF_WORD_WRITE_REQ:
-                        ret_msg_val = write_value(req->addr, req->value, 2);   
+                        write_value(req->addr, req->value, 2);   
                         break;
                 case WORD_READ_REQ:
                         ret_msg_val = read_value(req->addr, 4);   
                         break;
                 case WORD_WRITE_REQ:
-                        ret_msg_val = write_value(req->addr, req->value, 4);   
+                        write_value(req->addr, req->value, 4);   
                         break;
                 default:
                     assert(0, ASSERT_FATAL);

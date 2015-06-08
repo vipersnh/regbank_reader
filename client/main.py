@@ -20,21 +20,31 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
 
     def __init__(self, register, parent, model):
         super(register_table_t, self).__init__(parent);
-        qDebug("register_table_t with register "+str(id(register)));
-        self.register = register;
         self.setupUi(self);
         self.show();
+
+        qDebug("register_table_t with register "+str(id(register)));
+        self.register = register;
+        self.register_addr = self.register.base_addr + self.register.offset_size * self.register.offset_addr;
+        self.register_name_disp.setText(self.register.name + "@" + self.toHex(self.register_addr));
         self.model = model;
         self.field_infos = [];
-        self.register_subfields_view.setRowCount(len(self.register.element.sub_elements));
+        self.auto_read_mode.setEditable(True);
+        self.auto_read_mode.lineEdit().setAlignment(Qt.AlignCenter)
+        self.auto_read_mode.lineEdit().setReadOnly(True);
+
+        self.addr_offset_type.setEditable(True);
+        self.addr_offset_type.lineEdit().setAlignment(Qt.AlignCenter)
+        self.addr_offset_type.lineEdit().setReadOnly(True);
+
+        self.register_subfields_view.setRowCount(len(self.register.sub_elements));
         self.register_subfields_view.setColumnCount(len(self.view_fields));
-        self.register_name_disp.setText(self.register.element.register_name);
         self.register_subfields_view.horizontalHeader().setResizeMode(QHeaderView.Stretch);
         self.register_subfields_view.verticalHeader().setResizeMode(QHeaderView.Stretch);
         self.register_subfields_view.verticalHeader().setVisible(False);
         headerLabels = [];
         qDebug("register_subfields_view items are set now");
-        for row, sub_element in enumerate(self.register.element.sub_elements):
+        for row, sub_element in enumerate(self.register.sub_elements):
             view_field = self.view_fields[0];
             headerLabels.append(view_field.col_name);
             text = sub_element.name;
@@ -77,8 +87,33 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);
         self.register_update_button.clicked.connect(self.slot_register_update_clicked);
         self.register_value_edit.editingFinished.connect(self.slot_register_update_write);
-        # Initial register update
-        self.slot_register_update_clicked();
+
+        self.base_addr_edit.setText(self.toHex(self.register.base_addr));
+        self.offset_addr_edit.setText(self.toHex(self.register.offset_addr));
+        self.addr_offset_type.setCurrentIndex(0 if self.register.offset_size==1 else 1);
+
+        self.base_addr_edit.editingFinished.connect(self.slot_update_register_address);
+        self.addr_offset_type.currentIndexChanged.connect(self.slot_update_register_address);
+        self.offset_addr_edit.editingFinished.connect(self.slot_update_register_address);
+
+    def toHex(self, value):
+        return hex(value).upper().replace("X", "x");
+
+    def slot_base_addr_changed(self):
+        self.register.base_addr = self.toHex(self.base_addr_edit.text());
+
+    def slot_update_register_address(self):
+        base_addr = int(self.base_addr_edit.text(), 0);
+        offset_addr = int(self.offset_addr_edit.text(), 0);
+        offset_size = 1 if self.addr_offset_type.currentIndex()==0 else 4;
+        self.register.base_addr = base_addr;
+        self.register.offset_addr = offset_addr;
+        self.register.offset_size = offset_size;
+        self.register_addr = base_addr + offset_addr * offset_size;
+        self.register_name_disp.setText(self.register.name + "@" + self.toHex(self.register_addr));
+
+    def slot_offset_addr_changed(self):
+        self.register.offset_addr = self.toHex(self.offset_addr_edit.text());
 
     def slot_register_set_value(self, value):
         self.register_subfields_view.cellChanged.disconnect(self.write_register_from_subfields_value);
@@ -101,16 +136,23 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
 
     def slot_register_update_write(self):
         text = self.register_value_edit.text();
-        value = self.model.write_register(self.register, int(text, 0));
-        if value!=None:
-            self.slot_register_set_value(value);
+        write_value = int(text, 0);
+        write_success = self.model.write_register(self.register, write_value);
+        if (write_success and (self.auto_read_mode.currentIndex()==0)):
+            read_value = self.model.read_register(self.register);
+            if read_value!=None:
+                self.slot_register_set_value(read_value);
+        else:
+            # Display the previous write value to all places
+            self.slot_register_set_value(write_value);
 
     def write_register_from_subfields_value(self):
         self.register_subfields_view.cellChanged.disconnect(self.write_register_from_subfields_value);
         old_read_value = int(self.register_value_edit.text(), 0);
         new_write_value = 0x00;
-        new_read_value  = 0x00;
+        new_read_value  = None;
         valid_value = True;
+        write_success = None;
         for field_info in self.field_infos:
             try:
                 sub_value = int(self.register_subfields_view.item(field_info.row_idx, field_info.col_idx).text(), 0);
@@ -124,8 +166,10 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
                 break;
             new_write_value = new_write_value | sub_value << field_info.bit_shift;
         if valid_value:
-            new_read_value = self.model.write_register(self.register, new_write_value);
-        else:
+            write_success = self.model.write_register(self.register, new_write_value);
+            if write_success:
+                new_read_value = self.model.read_register(self.register);
+        if new_read_value==None:
             new_read_value = old_read_value;
         self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);
         self.slot_register_set_value(new_read_value);
@@ -154,6 +198,19 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
         self.target_selection.setEditable(True);
         self.target_selection.lineEdit().setAlignment(Qt.AlignCenter)
         self.target_selection.lineEdit().setReadOnly(True);
+
+        self.register_sheet_selection.setEditable(True);
+        self.register_sheet_selection.lineEdit().setAlignment(Qt.AlignCenter);
+        self.register_sheet_selection.lineEdit().setReadOnly(True);
+
+        self.regbank_selection.setEditable(True);
+        self.regbank_selection.lineEdit().setAlignment(Qt.AlignCenter);
+        self.regbank_selection.lineEdit().setReadOnly(True);
+
+        self.register_selection.setEditable(True);
+        self.register_selection.lineEdit().setAlignment(Qt.AlignCenter);
+        self.register_selection.lineEdit().setReadOnly(True);
+
         self.regbank_button.clicked.connect(self.slot_regbank_button_clicked);
         self.signal_load_regbank.connect(self.model.load_regbank_file);
         self.model.signal_regbank_connection.connect(self.regbank_button.setText);
@@ -214,8 +271,8 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
 
     def get_register_id(self, register):
         text = (self.regbank_selection.currentText() + self.register_sheet_selection.currentText()
-                + register.element.register_name + str(register.element.offset_addr)
-                + str(len(register.element.sub_elements)));
+                + register.name + str(register.offset_addr)
+                + str(len(register.sub_elements)));
         return md5(text.encode()).hexdigest();
 
     def slot_update_register_tab(self, register):
@@ -235,7 +292,7 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
 
         if addTabWidget:
             register_widget = register_table_t(register, self.registers_tab_widget, self.model);
-            self.registers_tab_widget.addTab(register_widget, register.element.register_name);
+            self.registers_tab_widget.addTab(register_widget, register.name);
             self.register_tabs[self.get_register_id(register)] = (register_widget, register);
             idx = self.registers_tab_widget.indexOf(register_widget);
             self.registers_tab_widget.setCurrentIndex(idx);
@@ -267,12 +324,11 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
             dialog.show();
             dialog.exec();
             base_addr = int(regbank_dialog.base_addr.text(), 0);
-            offset_size = int(regbank_dialog.offset_size.text(), 0);
+            offset_size = 1 if regbank_dialog.addr_offset_type.currentIndex()==0 else 4;
             if (base_addr==0 or offset_size==0) :
                 continue;
             else:
                 break;
-    
         info = regbank_additional_info_t(regbank_name, base_addr, offset_size);
         return info;
 

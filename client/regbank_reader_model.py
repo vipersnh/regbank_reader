@@ -12,8 +12,13 @@ class regbank_db_t:
         self.start_addr  = None;
         self.end_addr    = None;
 
-register_t   = namedtuple("register_t", ["base_addr", "offset_size", "element"]);
-register_t.__new__.__defaults__ = (None, None, None);
+class register_t:
+    def __init__(self, register_name,  base_addr=None, offset_addr= None, offset_size=None, sub_elements=None):
+        self.name = register_name;
+        self.base_addr = base_addr;
+        self.offset_addr = offset_addr;
+        self.offset_size = offset_size;
+        self.sub_elements = sub_elements;
 
 regbank_additional_info_t = namedtuple("regbank_additional_info_t", ["regbank_name", "base_addr", "offset_size"]);
 regbank_additional_info_t.__new__.__defaults__ = (None, None, None);
@@ -137,8 +142,8 @@ class regbank_reader_model_t(QObject):
         for sheet in selected_db.sheets:
             sheetnames.append(sheet.sheet_name);
             registernames = [];
-            for register in  sheet.elements:
-                registernames.append(register.register_name);
+            for element in  sheet.elements:
+                registernames.append(element.register_name);
             registers_list.append(registernames);
         self.signal_regbank_info.emit(sheetnames, registers_list);
     
@@ -168,7 +173,7 @@ class regbank_reader_model_t(QObject):
         base_addr = self.regbank_db_list[regbank_idx].base_addr;
         offset_size = self.regbank_db_list[regbank_idx].offset_size;
         element      = self.regbank_db_list[regbank_idx].db.sheets[sheet_idx].elements[register_idx];
-        register = register_t(base_addr, offset_size, element);
+        register = register_t(element.register_name, base_addr, element.offset_addr, offset_size, element.sub_elements);
         return register;
 
     def update_mmap(self, start_addr, end_addr):
@@ -218,23 +223,29 @@ class regbank_reader_model_t(QObject):
             msg_read = msg_req_t();
             msg_read.handle = id(register);
             msg_read.req_type = WORD_READ_REQ;
-            msg_read.addr = register.base_addr+register.offset_size*register.element.offset_addr;
+            msg_read.addr = register.base_addr+register.offset_size*register.offset_addr;
             resp = self.client.query_server(msg_read);
             assert(resp.handle==msg_read.handle);
-            return resp.value;
+            if resp.status==STATUS_OK:
+                return resp.value; # Read success
+            else:
+                return None; # Read failed
         else:
-            return None;
+            return None; # Read failed
 
     def write_register(self, register, value):
         if self.targetInitialized():
             msg_write = msg_req_t();
             msg_write.handle = id(register);
             msg_write.req_type = WORD_WRITE_REQ;
-            msg_write.addr = register.base_addr+register.offset_size*register.element.offset_addr;
+            msg_write.addr = register.base_addr+register.offset_size*register.offset_addr;
             msg_write.value = value;
             resp = self.client.query_server(msg_write);
             assert(resp.handle==msg_write.handle);
-            return resp.value;
+            if resp.status==STATUS_OK:
+                return True; # Write success
+            else:
+                return False; # Write failed
         else:
-            return None;
+            return False; # Write failed
     
