@@ -1,4 +1,4 @@
-from PyQt4.QtCore import QObject, pyqtSignal, QThread, QMutex, Qt
+from PyQt4.QtCore import QObject, pyqtSignal, QThread, QMutex, Qt, qDebug
 from PyQt4.QtGui import QMessageBox
 from collections import namedtuple
 from regbank_parser import *
@@ -180,7 +180,9 @@ class regbank_reader_model_t(QObject):
         msg_mmap_init.end_addr   = end_addr;
         resp = self.client.query_server(msg_mmap_init);
         if resp.status==STATUS_OK:
-            self.mmap_done = True;
+            self.mmap_done = True
+        else:
+            print("MMAP Failed on server side!");
     
     def update_regbank_additional_info(self, regbank_info):
         for idx, val in enumerate(self.regbank_db_list):

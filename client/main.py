@@ -96,13 +96,13 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
 
     def slot_register_update_clicked(self):
         value = self.model.read_register(self.register);
-        if value:
+        if value!=None:
             self.slot_register_set_value(value);
 
     def slot_register_update_write(self):
         text = self.register_value_edit.text();
         value = self.model.write_register(self.register, int(text, 0));
-        if value:
+        if value!=None:
             self.slot_register_set_value(value);
 
     def write_register_from_subfields_value(self):
@@ -261,13 +261,13 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
         regbank_dialog.setupUi(dialog);
         regbank_dialog.accept_button.clicked.connect(dialog.accept);
         regbank_dialog.main_label.setText(label_text);
-        base_addr = 0x40004000;
-        offset_size = 2;
+        base_addr = 0x00;
+        offset_size = 0x00;
         while 1:
-            #dialog.show();
-            #dialog.exec();
-            #base_addr = int(regbank_dialog.base_addr.text(), 0);
-            #offset_size = int(regbank_dialog.offset_size.text(), 0);
+            dialog.show();
+            dialog.exec();
+            base_addr = int(regbank_dialog.base_addr.text(), 0);
+            offset_size = int(regbank_dialog.offset_size.text(), 0);
             if (base_addr==0 or offset_size==0) :
                 continue;
             else:
