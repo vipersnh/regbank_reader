@@ -199,8 +199,9 @@ void server::tcp_processor_loop()
     status = listen(this->server_socket_handle, 1);
 
     pthread_cleanup_push((server::tcp_thread_cancel), this);
-
+    msg_parser_init();  /* Initialize msg_parser state */
     while(1) {
+        msg_parser_munmap_all(); /* MUNMAP all regions used by previous connection */
         this->client_socket_handle = accept(this->server_socket_handle,
             (struct sockaddr *)&client_socket_addr, &clilen);
         assert(this->client_socket_handle!=0, ASSERT_FATAL);

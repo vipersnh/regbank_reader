@@ -39,49 +39,56 @@ static uint8_t msg_parser_munmap(msg_address_t start_addr, msg_address_t end_add
 
 void msg_parser_init()
 {
+    uint8_t idx;
     memset(g_msg_parser_ctxt, 0x00, sizeof(msg_parser_ctxt_t));
-    g_msg_parser_ctxt->parser_state = MSG_PARSER_UNINITIALIZED_STATE;
+    for (idx=0; idx < MAX_MMAPS_PER_CONNECTION; idx++) {
+        g_msg_parser_ctxt->parser_state[idx] = MSG_PARSER_UNINITIALIZED_STATE;
+    }
 }
 
 static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
 {
     int mem_fd;
-#if 1
+#if 0
     g_msg_parser_ctxt->start_addr = start;
     g_msg_parser_ctxt->end_addr   = end;
     g_msg_parser_ctxt->parser_state = MSG_PARSER_INITIALIZED_STATE;
     return true;
 #endif
-    if (g_msg_parser_ctxt->start_addr || g_msg_parser_ctxt->end_addr) {
-        msg_parser_munmap(g_msg_parser_ctxt->start_addr, g_msg_parser_ctxt->end_addr);
-    }
-    g_msg_parser_ctxt->start_addr = start;
-    g_msg_parser_ctxt->end_addr   = end;
+    g_msg_parser_ctxt->start_addr[g_msg_parser_ctxt->num_mmaps] = start;
+    g_msg_parser_ctxt->end_addr[g_msg_parser_ctxt->num_mmaps]   = end;
     mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
     if (mem_fd < 0) {
         perror("open(/dev/mem, O_RDWR | O_SYNC) failed");
         assert(0, ASSERT_NONFATAL);
-        g_msg_parser_ctxt->parser_state = MSG_PARSER_UNINITIALIZED_STATE;
+        g_msg_parser_ctxt->parser_state[g_msg_parser_ctxt->num_mmaps] = MSG_PARSER_UNINITIALIZED_STATE;
         return false;
     }
     msg_parser_mmap(mem_fd, start, end);
     close(mem_fd);
-    g_msg_parser_ctxt->parser_state = MSG_PARSER_INITIALIZED_STATE;
+    g_msg_parser_ctxt->parser_state[g_msg_parser_ctxt->num_mmaps] = 
+        MSG_PARSER_INITIALIZED_STATE;
+    g_msg_parser_ctxt->num_mmaps++;
+    assert(g_msg_parser_ctxt->num_mmaps <= MAX_MMAPS_PER_CONNECTION, ASSERT_FATAL);
     return true;
 }
 
 static bool check_address(msg_address_t addr)
 {
-    if (g_msg_parser_ctxt->parser_state==MSG_PARSER_INITIALIZED_STATE) {
-        if ((addr >= g_msg_parser_ctxt->start_addr) && 
-            (addr <= g_msg_parser_ctxt->end_addr)) {
-            return true;
+    uint8_t idx;
+    for (idx=0; idx < g_msg_parser_ctxt->num_mmaps; idx++) {
+        if (g_msg_parser_ctxt->parser_state[idx]==MSG_PARSER_INITIALIZED_STATE) {
+            if ((addr >= g_msg_parser_ctxt->start_addr[idx]) && 
+                (addr <= g_msg_parser_ctxt->end_addr[idx])) {
+                return true;
+            } else {
+                return false;
+            }
         } else {
             return false;
         }
-    } else {
-        return false;
     }
+    return false;
 }
 
 static void msg_parser_resp(msg_handle_type_t msg_handle,
@@ -150,6 +157,34 @@ void write_value(msg_address_t addr, msg_val_t val, uint8_t val_size)
         default :
             assert(0, ASSERT_FATAL);
     }
+}
+
+void msg_parser_munmap_all(void)
+{
+    int mem_fd;
+    uint8_t &num_mmaps = g_msg_parser_ctxt->num_mmaps;
+    mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+    if (mem_fd < 0) {
+        perror("open(/dev/mem, O_RDWR | O_SYNC) failed");
+        assert(0, ASSERT_NONFATAL);
+        return ;
+    }
+    while (num_mmaps) {
+        if (g_msg_parser_ctxt->parser_state[num_mmaps-1]==
+                MSG_PARSER_INITIALIZED_STATE) {
+            msg_parser_mmap(mem_fd,
+                    g_msg_parser_ctxt->start_addr[num_mmaps-1],
+                    g_msg_parser_ctxt->end_addr[num_mmaps-1]);
+            g_msg_parser_ctxt->parser_state[num_mmaps-1]=
+                MSG_PARSER_UNINITIALIZED_STATE;
+            g_msg_parser_ctxt->start_addr[num_mmaps-1] = 0x00;
+            g_msg_parser_ctxt->end_addr[num_mmaps-1] = 0x00;
+        } else {
+            assert(0, ASSERT_FATAL); /* Invalid state */
+        }
+        num_mmaps--;
+    }
+    close(mem_fd);
 }
 
 void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)

@@ -13,6 +13,8 @@ typedef DATA_TYPE msg_val_t;
 #define MSG_ADDR_TYPE_SIZE 	    sizeof(DATA_TYPE)
 #define MSG_VAL_TYPE_SIZE  	    sizeof(DATA_TYPE)
 
+#define MAX_MMAPS_PER_CONNECTION    10
+
 /* msg_parser states
  * A. MSG_PARSER_UNINITIALIZED_STATE
  * B. MSG_PARSER_INITIALIZED_STATE
@@ -93,9 +95,10 @@ typedef struct {
 } msg_resp_t;
 
 typedef struct {
-    msg_parser_state_enum parser_state;
-    msg_address_t   start_addr;
-    msg_address_t   end_addr;
+    uint8_t         num_mmaps;
+    msg_parser_state_enum parser_state[MAX_MMAPS_PER_CONNECTION];
+    msg_address_t   start_addr[MAX_MMAPS_PER_CONNECTION];
+    msg_address_t   end_addr[MAX_MMAPS_PER_CONNECTION];
     char          * msg_req_buffer;
     char          * msg_resp_buffer;
     uint32_t      * msg_len;
@@ -103,6 +106,7 @@ typedef struct {
 
 extern void msg_parser(char *req, char *resp, uint32_t *msg_len);
 extern void msg_parser_init();
+extern void msg_parser_munmap_all(void);
 
 #endif
 

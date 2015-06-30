@@ -14,11 +14,11 @@ X86_M32_TARGET  :=  server.exe
 
 
 
-ARM_M32_CC 		:= 	arm-linux-gnueabi-gcc
-ARM_M32_CXX 	:= 	arm-linux-gnueabi-g++
-ARM_M32_LINK 	:= 	arm-linux-gnueabi-g++
-ARM_M32_CFLAGS  := -Wall -static -static-libgcc -g -pthread -march=armv7-a -mfloat-abi=softfp
-ARM_M32_CXXFLAGS  :=
+ARM_M32_CC 		:= 	arm-none-linux-gnueabi-gcc
+ARM_M32_CXX 	:= 	arm-none-linux-gnueabi-g++
+ARM_M32_LINK 	:= 	arm-none-linux-gnueabi-g++
+ARM_M32_CFLAGS  :=  -Wall -ggdb3 -pthread -march=armv7-a -mfloat-abi=softfp
+ARM_M32_CXXFLAGS:=
 ARM_M32_INC	    := $(SERVER_INC)
 ARM_M32_CSRCS   := 
 ARM_M32_CXXSRCS := $(SERVER_CXX_SRCS)
@@ -45,7 +45,7 @@ OBJS	  := $(patsubst %.cpp, $(BUILD_DIR)/%.o, \
 				$(patsubst %.c, $(BUILD_DIR)/%.o, $(CXXSRCS) $(CSRCS)))
 
 $($(BUILD)_TARGET) : $(BUILD_DIR) $(OBJS)
-	$(V) $(LINK) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS)
+	$(V) $(LINK) -o $@  $(OBJS) $(LDFLAGS)
 
 $(BUILD_DIR)/%.o : %.c
 	@ echo "\$$(CC)" $(CFLAGS) $(CXXFLAGS) "\$$(INC)" -c $(<F)

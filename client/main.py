@@ -133,11 +133,15 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         value = self.model.read_register(self.register);
         if value!=None:
             self.slot_register_set_value(value);
+        else:
+            print("Read failed, investigate");
 
     def slot_register_update_write(self):
         text = self.register_value_edit.text();
         write_value = int(text, 0);
         write_success = self.model.write_register(self.register, write_value);
+        if not write_success:
+            print("Write failed, investigate");
         if (write_success and (self.auto_read_mode.currentIndex()==0)):
             read_value = self.model.read_register(self.register);
             if read_value!=None:
@@ -169,6 +173,8 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
             write_success = self.model.write_register(self.register, new_write_value);
             if write_success:
                 new_read_value = self.model.read_register(self.register);
+            else:
+                print("Write failed, investigate");
         if new_read_value==None:
             new_read_value = old_read_value;
         self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);

@@ -84,7 +84,7 @@ class client_t:
         msg_len = c_ushort.from_buffer(bytearray(resp)).value;
         resp = self.server_socket_handle.recv(msg_len);
         resp_struct = msg_resp_t.from_buffer(bytearray(resp));
-        self.print_resp(resp_struct);
+#        self.print_resp(resp_struct);
         self.sync_mutex.unlock();
         return resp_struct;
     
