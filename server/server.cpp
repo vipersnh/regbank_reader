@@ -32,7 +32,7 @@ server::server(uint32_t udp_port, uint32_t tcp_port,
     this->alive_elapsed_time         = 0;
     memset(this->hostIpAddr, 0x00, sizeof(this->hostIpAddr));
     this->client_socket_handle = this->server_socket_handle = this->udp_socket_handle = 0;
-    this->gethost_itf_ipaddr((char *)this->hostIpAddr, sizeof(this->hostIpAddr), "wlan0");
+    this->gethost_itf_ipaddr((char *)this->hostIpAddr, sizeof(this->hostIpAddr), itf);
 }
 
 void server::stop()
@@ -105,7 +105,7 @@ void server::gethost_itf_ipaddr(char *ip_addr, uint16_t len, const char * itf)
             tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
             char addressBuffer[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-            if (strstr(ifa->ifa_name, itf)>0 || strstr(ifa->ifa_name, itf)>0) {
+            if (strcmp(ifa->ifa_name, itf)==0) {
                 strcpy(ip_addr, addressBuffer);
                 printf("\n%s\n", ip_addr);
             }

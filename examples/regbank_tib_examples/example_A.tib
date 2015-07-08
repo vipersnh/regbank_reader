@@ -1,0 +1,4 @@
+# Lines Starting with '#' are ignored, ' ' character is ignored if more than one.
+# Lines containing '#' after each tib is treated as a comment
+read 0x40132
+

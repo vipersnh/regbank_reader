@@ -111,7 +111,7 @@ static void msg_parser_resp(msg_handle_type_t msg_handle,
 static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
 {
     msg_val_t ret_val = -1;
-#if 1
+#if 0
     return 0xABCDEFA;
 #endif
     switch (val_size) {
@@ -161,20 +161,12 @@ void write_value(msg_address_t addr, msg_val_t val, uint8_t val_size)
 
 void msg_parser_munmap_all(void)
 {
-    int mem_fd;
     uint8_t &num_mmaps = g_msg_parser_ctxt->num_mmaps;
-    mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
-    if (mem_fd < 0) {
-        perror("open(/dev/mem, O_RDWR | O_SYNC) failed");
-        assert(0, ASSERT_NONFATAL);
-        return ;
-    }
     while (num_mmaps) {
         if (g_msg_parser_ctxt->parser_state[num_mmaps-1]==
                 MSG_PARSER_INITIALIZED_STATE) {
-            msg_parser_mmap(mem_fd,
-                    g_msg_parser_ctxt->start_addr[num_mmaps-1],
-                    g_msg_parser_ctxt->end_addr[num_mmaps-1]);
+            msg_parser_munmap(g_msg_parser_ctxt->start_addr[num_mmaps-1],
+                            g_msg_parser_ctxt->end_addr[num_mmaps-1]);
             g_msg_parser_ctxt->parser_state[num_mmaps-1]=
                 MSG_PARSER_UNINITIALIZED_STATE;
             g_msg_parser_ctxt->start_addr[num_mmaps-1] = 0x00;
@@ -184,7 +176,6 @@ void msg_parser_munmap_all(void)
         }
         num_mmaps--;
     }
-    close(mem_fd);
 }
 
 void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)

@@ -17,8 +17,8 @@ X86_M32_TARGET  :=  server.exe
 ARM_M32_CC 		:= 	arm-none-linux-gnueabi-gcc
 ARM_M32_CXX 	:= 	arm-none-linux-gnueabi-g++
 ARM_M32_LINK 	:= 	arm-none-linux-gnueabi-g++
-ARM_M32_CFLAGS  :=  -Wall -ggdb3 -pthread -march=armv7-a -mfloat-abi=softfp
-ARM_M32_CXXFLAGS:=
+ARM_M32_CFLAGS  :=  
+ARM_M32_CXXFLAGS:= -Wall -ggdb3 -pthread -march=armv7-a -mfloat-abi=softfp
 ARM_M32_INC	    := $(SERVER_INC)
 ARM_M32_CSRCS   := 
 ARM_M32_CXXSRCS := $(SERVER_CXX_SRCS)
@@ -52,7 +52,7 @@ $(BUILD_DIR)/%.o : %.c
 	$(V) $(CC) $(CFLAGS) $(INC) -c -o $@ $<
 
 $(BUILD_DIR)/%.o : %.cpp 
-	@ echo "\$$(CXX)" $(CFLAGS) $(CXXFLAGS) "\$$(INC)" -c $(<F)
+	@ echo $(CXX) $(CXXFLAGS) $(INC) -c $(<F)
 	$(V) $(CXX) $(CXXFLAGS) $(INC) -c -o $@ $<
 
 $(BUILD_DIR) :

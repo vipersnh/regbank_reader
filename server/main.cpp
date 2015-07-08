@@ -16,20 +16,25 @@ extern "C" {
 #define UDP_REPEAT_TIMEOUT 2
 #define TCP_ALIVE_TIMEOUT 100
 
-server svr(UDP_PORT, TCP_PORT, UDP_REPEAT_TIMEOUT, TCP_ALIVE_TIMEOUT, "wlan");
+server *g_svr;
 
 void ctrl_c_handler(int sig)
 {
-    svr.stop();
+    g_svr->stop();
 }
 
 
-int main()
+int main(int argc, char *argv[])
 {
+    if (argc==1 || argc>2) {
+        printf("Enter an interface [eth0, wlan0 or soon] to attach server. Exiting\n");
+        exit(-1);
+    }
+    g_svr = new server(UDP_PORT, TCP_PORT, UDP_REPEAT_TIMEOUT, TCP_ALIVE_TIMEOUT, argv[1]);
     signal(SIGINT, ctrl_c_handler);
     signal(SIGTERM, ctrl_c_handler);
     printf("Starting server \n");
-    svr.start((void*)&svr);
+    g_svr->start((void*)g_svr);
 }
 
 
