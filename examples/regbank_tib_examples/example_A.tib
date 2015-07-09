@@ -1,4 +1,13 @@
 # Lines Starting with '#' are ignored, ' ' character is ignored if more than one.
 # Lines containing '#' after each tib is treated as a comment
-read 0x40132
+*0x10000 = ?
+*0x10000 = 0x00
+*0x10000 = 0x07  & 0b11
 
+load_regbank "../regbank_sheet_examples/demo_regbank.xlsx" # Relative to location of tib file 
+load_sheet demo_regbank.Sheet_A at 0x40004000 using BYTE_OFFSETS as Sheet_A0
+load_sheet demo_regbank.Sheet_A at 0x40005000 using BYTE_OFFSETS as Sheet_A1
+load_sheet demo_regbank.Sheet_B at 0x40006000 using BYTE_OFFSETS
+
+*demo_regbank.Sheet_A.Register_A = 0x00
+*demo_regbank.Sheet_B.Register_B.Subfield_B_A = 0x020
