@@ -18,10 +18,12 @@ msg_req_t temp;
 static msg_parser_ctxt_t msg_parser_ctxt;
 static msg_parser_ctxt_t *g_msg_parser_ctxt = &msg_parser_ctxt;
 
-static uint8_t * msg_parser_mmap(int fd, msg_address_t start_addr, msg_address_t end_addr)
+static uint8_t * msg_parser_mmap(int fd, msg_address_t start_addr, 
+        msg_address_t end_addr)
 {
     
-    uint8_t * rv = (uint8_t *)mmap((void*)(intptr_t)start_addr, (end_addr-start_addr+1), PROT_READ | PROT_WRITE,
+    uint8_t * rv = (uint8_t *)mmap((void*)(intptr_t)start_addr, 
+            (end_addr-start_addr+1), PROT_READ | PROT_WRITE,
             MAP_SHARED, fd, (off_t) (start_addr & PAGE_MASK));
     if (rv == MAP_FAILED) {
         return NULL;
@@ -44,11 +46,17 @@ void msg_parser_init()
     for (idx=0; idx < MAX_MMAPS_PER_CONNECTION; idx++) {
         g_msg_parser_ctxt->parser_state[idx] = MSG_PARSER_UNINITIALIZED_STATE;
     }
+    g_msg_parser_ctxt->mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+    if (g_msg_parser_ctxt->mem_fd < 0) {
+        perror("open(/dev/mem, O_RDWR | O_SYNC) failed");
+        assert(0, ASSERT_NONFATAL);
+        g_msg_parser_ctxt->parser_state[g_msg_parser_ctxt->num_mmaps] =
+            MSG_PARSER_UNINITIALIZED_STATE;
+    }
 }
 
 static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
 {
-    int mem_fd;
 #if 0
     g_msg_parser_ctxt->start_addr = start;
     g_msg_parser_ctxt->end_addr   = end;
@@ -57,15 +65,7 @@ static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
 #endif
     g_msg_parser_ctxt->start_addr[g_msg_parser_ctxt->num_mmaps] = start;
     g_msg_parser_ctxt->end_addr[g_msg_parser_ctxt->num_mmaps]   = end;
-    mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
-    if (mem_fd < 0) {
-        perror("open(/dev/mem, O_RDWR | O_SYNC) failed");
-        assert(0, ASSERT_NONFATAL);
-        g_msg_parser_ctxt->parser_state[g_msg_parser_ctxt->num_mmaps] = MSG_PARSER_UNINITIALIZED_STATE;
-        return false;
-    }
-    msg_parser_mmap(mem_fd, start, end);
-    close(mem_fd);
+    msg_parser_mmap(g_msg_parser_ctxt->mem_fd, start, end);
     g_msg_parser_ctxt->parser_state[g_msg_parser_ctxt->num_mmaps] = 
         MSG_PARSER_INITIALIZED_STATE;
     g_msg_parser_ctxt->num_mmaps++;
@@ -182,7 +182,8 @@ void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
 {
     msg_req_t         * req;
     msg_val_t           ret_msg_val;
-    /* Store req and resp buffers into global context to work for current message */
+    /* Store req and resp buffers into global context
+     * to work for current message */
     g_msg_parser_ctxt->msg_req_buffer   = msg_req_buffer;
     g_msg_parser_ctxt->msg_resp_buffer  = msg_resp_buffer;
     g_msg_parser_ctxt->msg_len          = msg_len;
@@ -210,6 +211,31 @@ void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
             status = STATUS_FAIL;
         }
         msg_parser_resp(req->handle, req->req_type, status);
+    } else if (req->type==WORD_READ_REQ_UNMAPPED || 
+            req->type==WORD_WRITE_REQ_UNMAPPED) {
+        msg_address_t start_addr, end_addr;
+        start_addr = req->addr;
+        end_addr   = req->addr+1;
+        /* MMAP temporarily */
+        msg_parser_mmap(g_msg_parser_ctxt->mem_fd, start_addr, end_addr);
+        {
+            /* Do read or write */
+            ret_msg_val = -1;
+            switch (req->req_type) {
+                case WORD_READ_REQ_UNMAPPED:
+                    ret_msg_val = read_value(req->addr, 4);
+                    break;
+                case WORD_WRITE_REQ_UNMAPPED:
+                    write_value(req->addr, req->value, 4);
+                    break;
+                default:
+                    assert(0, ASSERT_FATAL);
+            }
+            msg_parser_resp(req->handle, req->req_type, STATUS_OK,
+                    req->addr, ret_msg_val);
+        }
+        /* MUNMAP after read/write */
+        msg_parser_munmap(start_addr, end_addr);
     } else {
         if (check_address(req->addr)) {
             ret_msg_val = -1;

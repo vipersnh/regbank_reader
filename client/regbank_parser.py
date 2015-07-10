@@ -1,7 +1,8 @@
 import xlrd
+import re
 from os.path import basename, splitext
 from pdb import set_trace
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from StructDict import StructDict
 import enumeration
 
@@ -11,15 +12,16 @@ class offsets_enum_t(enumeration.Enum):
 
 
 subfield_t      = StructDict("subfield_t", ["bit_width", "bit_position", "sw_attr", 
-                             "hw_attr", "default_val", "description"])
+                                            "hw_attr", "default_val", "description"])
 register_t      = StructDict("register_t", ["offset_addr", "subfields"])
-sheet_t         = StructDict("sheet_t", ["base_addr", "registers"])
+sheet_t         = StructDict("sheet_t",    ["base_addr","mmap_done", "start_addr", "end_addr", "offset_type", "registers"])
 ## Register Access from  db
 #  db["regbank"]["sheet"]["register"] = 
-db              = dict()
+db              = OrderedDict()
+
 
 ## Columns information
-regbank_info = {"start_row_idx"      :1,
+regbank_info = {"start_row_header"   :"Offset address",
                 "offset_address_col" :0,
                 "register_name_col"  :1,
                 "sub_field_name_col" :2,
@@ -28,19 +30,22 @@ regbank_info = {"start_row_idx"      :1,
                 "sw_attr_col"        :5,
                 "hw_attr_col"        :6,
                 "default_value_col"  :7,
-                "description_col"    :8};
+                "description_col"    :8,
+                "reserved_keyword"   :"RESERVED"};
 
 
 
-regbank_files = dict()  # Dict of all regbank files to be opened for reading, keyed by regbank_name
+regbank_files = OrderedDict()  # Dict of all regbank files to be opened for reading, 
+                        # keyed by regbank_name
 
 def regbank_decode_register(rows) :
     register_name = rows[0][regbank_info["register_name_col"]].value
     register = register_t()
     register.offset_addr =int(rows[0][regbank_info["offset_address_col"]].value)
-    register.subfields = dict()
+    register.subfields = OrderedDict()
     sw_attr = rows[0][regbank_info["sw_attr_col"]].value
     hw_attr = rows[0][regbank_info["hw_attr_col"]].value
+    reserved_idx = 0
     for row in rows :
         subfield    = subfield_t()
         subfield_name = row[regbank_info["sub_field_name_col"]].value
@@ -50,69 +55,107 @@ def regbank_decode_register(rows) :
         subfield.hw_attr = hw_attr
         subfield.default_val = row[regbank_info["default_value_col"]].value
         subfield.description = description = row[regbank_info["description_col"]].value
-        assert subfield_name not in register.subfields.keys(), "Subfield name already present"
+        if re.search(regbank_info["reserved_keyword"], subfield_name, re.IGNORECASE):
+            subfield_name = regbank_info["reserved_keyword"] + str(reserved_idx)
+            reserved_idx += 1
+        try:
+            assert subfield_name not in register.subfields.keys(), \
+                "Subfield name already present"
+        except:
+            set_trace()
+            pass
         register.subfields[subfield_name] = subfield
-    if element.register_name=='':
-        assert 0, "Handle this condition"
+    if register_name=='':
+        return [None, None]
     else:
         return [register_name, register];
 
-def regbank_to_load(fname) :
+def regbank_load_excel(fname) :
     regbank_name = splitext(basename(fname))[0]
     regbank_files[regbank_name] = fname
-    db[regbank_name] = dict()
+    db[regbank_name] = OrderedDict()
+
+def regbank_unload(regbank_name):
+    if regbank_name in db.keys():
+        db.pop(regbank_name)
+
+def regbank_load_excel_all_sheets(fname) :
+    # TODO for GUI
+    pass
 
 def regbank_get_sheetnames(fname):
     # TODO for GUI
     pass
 
-def regbank_load_sheet(regbank_name, sheet_name, base_addr, offset_type=None, as_sheet_name=None):
-    assert regbank_name in regbank_files.keys(), "Regbank file must be loaded before loading sheets"
+
+def regbank_load_sheet(regbank_name, sheet_name, base_addr, 
+                       offset_type=offsets_enum_t.BYTE_OFFSETS, 
+                       as_sheet_name=None):
+    assert regbank_name in regbank_files.keys(), \
+            "Regbank file must be loaded before loading sheets"
     workbook = xlrd.open_workbook(regbank_files[regbank_name])
-    assert sheet_name in workbook.sheet_names(), "Loaded regbank doesnt contain sheet specified"
+    assert sheet_name in workbook.sheet_names(), \
+            "Loaded regbank doesnt contain sheet specified"
     xl_sheet = workbook.sheet_by_name(sheet_name)
-    row_idx = regbank_info["start_row_idx"]
+    row_idx = 0
+    while row_idx < xl_sheet.nrows:
+        text = xl_sheet.row(row_idx)[0].value
+        if re.search(regbank_info["start_row_header"], text, re.IGNORECASE):
+            row_idx += 1    # Skip first row corresponding to header
+            break
+        else:
+            row_idx += 1
+    if row_idx == xl_sheet.nrows:
+        assert 0, "Register sheet is an invalid sheet"
+
+    if as_sheet_name:
+        assert as_sheet_name not in db[regbank_name].keys()
+        sheet_name = as_sheet_name
     db[regbank_name][sheet_name] = sheet_t()
+    db[regbank_name][sheet_name].base_addr = base_addr
+    db[regbank_name][sheet_name].registers = OrderedDict()
     while 1:
         row_line = xl_sheet.row(row_idx)
         rows = []
         rows.append(xl_sheet.row(row_idx))
         row_idx += 1
-        while (row_idx<xl_sheet.nrows) and (xl_sheet.row(row_idx)[regbank_info["offset_address_col"]].value==''):
+        while ((row_idx<xl_sheet.nrows) and 
+                (xl_sheet.row(row_idx)[regbank_info["offset_address_col"]].value=='')):
             rows.append(xl_sheet.row(row_idx))
             row_idx += 1
         [register_name, register] = regbank_decode_register(rows)
-        db[regbank_name][sheet_name][register_name] = register
+        if register:
+            db[regbank_name][sheet_name].registers[register_name] = register
         if row_idx>=xl_sheet.nrows :
             break
-    set_trace()
-    pass
-#    workbook = xlrd.open_workbook(fname)
-#    regbank = splitext(basename(fname))[0]
-#    db = {}
-#    for i in range(0, workbook.nsheets) :
-#        xl_sheet = workbook.sheet_by_index(i)
-#        sheet = sheet_t()
-#        row_idx = regbank_info["start_row_idx"]
-#        while 1:
-#            row_line = xl_sheet.row(row_idx)
-#            rows = []
-#            rows.append(xl_sheet.row(row_idx))
-#            row_idx += 1
-#            while (row_idx<xl_sheet.nrows) and (xl_sheet.row(row_idx)[regbank_info["offset_address_col"]].value==''):
-#                rows.append(xl_sheet.row(row_idx))
-#                row_idx += 1
-#            element = regbank_decode_elements(rows)
-#            if element!=None:
-#                sheet.elements.append(element)
-#            if row_idx>=xl_sheet.nrows :
-#                break
-#        db.sheets.append(sheet)
-#    return db
+    predicted_offset_type = regbank_offset_size_predict(db[regbank_name][sheet_name])
+    assert predicted_offset_type==offset_type, "Predicted offset type" \
+            "different from given offset type"
+    db[regbank_name][sheet_name].offset_type = offset_type
+    db[regbank_name][sheet_name].mmap_done = False
+    first_register_name = list(db[regbank_name][sheet_name].registers.keys())[0]
+    last_register_name  = list(db[regbank_name][sheet_name].registers.keys())[-1]
+    db[regbank_name][sheet_name].start_addr = \
+            db[regbank_name][sheet_name].registers[first_register_name].offset_addr * \
+            (1 if offset_type==offsets_enum_t.BYTE_OFFSETS else 4) + base_addr
+    db[regbank_name][sheet_name].end_addr = \
+            db[regbank_name][sheet_name].registers[last_register_name].offset_addr * \
+            (1 if offset_type==offsets_enum_t.BYTE_OFFSETS else 4) + base_addr
 
-def regbank_offset_size_predict(db):
-    assert 0, "Handle this"
-    return None;
+def regbank_unload_sheet(regbank_name, sheet_name):
+    if regbank_name in db.keys():
+        if sheet_name in db[regbank_name].keys():
+            db[regbank_name].pop(sheet_name)
+
+def regbank_offset_size_predict(sheet):
+    diffs = {1:0, 4:0}
+    register_names = list(sheet.registers.keys())
+    for register_idx in range(len(sheet.registers)-1):
+        offset_diff = sheet.registers[register_names[register_idx+1]].offset_addr - \
+                sheet.registers[register_names[register_idx]].offset_addr
+        if offset_diff in [1, 4]:
+            diffs[offset_diff] += 1
+    return offsets_enum_t.WORD_OFFSETS if diffs[1] > diffs[4] else offsets_enum_t.BYTE_OFFSETS
 
 if __name__ == "__main__":
     import os
@@ -122,6 +165,6 @@ if __name__ == "__main__":
     parse_res = parser.parse_args()
     fnames = parse_res.fnames
     regbank_to_load(fnames[0])
-    regbank_load_sheet("demo_regbank", "Sheet_A", offsets_enum_t.WORD_OFFSETS, 0x4000000)
-
+    regbank_load_sheet("demo_regbank", "Sheet_A", 0x4000000, offsets_enum_t.WORD_OFFSETS)
+    regbank_load_sheet("demo_regbank", "Sheet_A", 0x4000400, offsets_enum_t.WORD_OFFSETS, "Sheet_A_1")
 

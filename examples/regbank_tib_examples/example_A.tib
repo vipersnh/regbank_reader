@@ -1,13 +1,19 @@
 # Lines Starting with '#' are ignored, ' ' character is ignored if more than one.
 # Lines containing '#' after each tib is treated as a comment
-*0x10000 = ?
-*0x10000 = 0x00
-*0x10000 = 0x07  & 0b11
+*0x10000 = ? # This is plain read 
+*0x10004 = 0x00
+*0x10008 = 0x07  & 0b11 # This is write with extra mask
+*0x10008 =? 0x07  # This is rmwrite with no mask
+*0x10008 =? 0x07  & 0b11 # This is rmwrite with extra mask
 
 load_regbank "../regbank_sheet_examples/demo_regbank.xlsx" # Relative to location of tib file 
-load_sheet demo_regbank.Sheet_A at 0x40004000 using BYTE_OFFSETS as Sheet_A0
-load_sheet demo_regbank.Sheet_A at 0x40005000 using BYTE_OFFSETS as Sheet_A1
-load_sheet demo_regbank.Sheet_B at 0x40006000 using BYTE_OFFSETS
+load_sheet demo_regbank.Sheet_A at 0x40004000 using WORD_OFFSETS as Sheet_A0
+load_sheet demo_regbank.Sheet_A at 0x40005000 using WORD_OFFSETS as Sheet_A1
+load_sheet demo_regbank.Sheet_B at 0x40006000 using WORD_OFFSETS
 
 *demo_regbank.Sheet_A.Register_A = 0x00
 *demo_regbank.Sheet_B.Register_B.Subfield_B_A = 0x020
+
+unload_sheet demo_regbank.Sheet_A0
+unload_sheet demo_regbank.Sheet_A1
+unload_regbank demo_regbank
