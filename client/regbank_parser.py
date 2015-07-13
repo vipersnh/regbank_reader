@@ -12,8 +12,8 @@ class offsets_enum_t(enumeration.Enum):
 
 
 subfield_t      = StructDict("subfield_t", ["bit_width", "bit_position", "sw_attr", 
-                                            "hw_attr", "default_val", "description"])
-register_t      = StructDict("register_t", ["offset_addr", "subfields"])
+                                            "hw_attr", "default_val", "description", "value"])
+register_t      = StructDict("register_t", ["offset_addr", "subfields", "value"])
 sheet_t         = StructDict("sheet_t",    ["base_addr","mmap_done", "start_addr", "end_addr", "offset_type", "registers"])
 ## Register Access from  db
 #  db["regbank"]["sheet"]["register"] = 

@@ -4,200 +4,187 @@ from hashlib import md5
 from os.path import basename, splitext
 from PyQt4.QtCore import pyqtRemoveInputHook, QThread, Qt, qDebug
 from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem
-from regbank_reader_main import *
+from widgets.regbank_reader_main import *
 from regbank_reader_model import *
-from regbank_address_dialog import *
-from register_tab import *
+from widgets.regbank_address_dialog import *
+from widgets.register_tab import *
 
-view_field_t = namedtuple("view_field_t", ["col_name", "col_num"]);
-field_info_t = namedtuple("field_info_t", ["row_idx", "col_idx", "bit_mask", "bit_shift"]);
-class register_table_t (QWidget, Ui_register_tab, QObject) :
-
-    # To store the columns and their spacing details
-    view_fields = [view_field_t("Subfield Name", 0), view_field_t("Field desc", 1),
-                   view_field_t("Value", 2), view_field_t("Default value", 3),
-                   view_field_t("General Description", 4)];
-
-    def __init__(self, register, parent, model):
-        super(register_table_t, self).__init__(parent);
-        self.setupUi(self);
-        self.show();
-
-        qDebug("register_table_t with register "+str(id(register)));
-        self.register = register;
-        self.register_addr = self.register.base_addr + self.register.offset_size * self.register.offset_addr;
-        self.register_name_disp.setText(self.register.name + "@" + self.toHex(self.register_addr));
-        self.model = model;
-        self.field_infos = [];
-        self.auto_read_mode.setEditable(True);
-        self.auto_read_mode.lineEdit().setAlignment(Qt.AlignCenter)
-        self.auto_read_mode.lineEdit().setReadOnly(True);
-
-        self.addr_offset_type.setEditable(True);
-        self.addr_offset_type.lineEdit().setAlignment(Qt.AlignCenter)
-        self.addr_offset_type.lineEdit().setReadOnly(True);
-
-        self.register_subfields_view.setRowCount(len(self.register.sub_elements));
-        self.register_subfields_view.setColumnCount(len(self.view_fields));
-        self.register_subfields_view.horizontalHeader().setResizeMode(QHeaderView.Stretch);
-        self.register_subfields_view.verticalHeader().setResizeMode(QHeaderView.Stretch);
-        self.register_subfields_view.verticalHeader().setVisible(False);
-        headerLabels = [];
-        qDebug("register_subfields_view items are set now");
-        for row, sub_element in enumerate(self.register.sub_elements):
-            view_field = self.view_fields[0];
-            headerLabels.append(view_field.col_name);
-            text = sub_element.name;
-            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
-            self.register_subfields_view.setItem(row, view_field.col_num, item);
-
-            view_field = self.view_fields[1];
-            headerLabels.append(view_field.col_name);
-            positions = re.findall("[0-9]+", sub_element.bit_position);
-            if len(positions)==1:
-                start_bit = end_bit = positions[0];
-            else:
-                [end_bit, start_bit] = positions;
-            start_bit = int(start_bit, 0);
-            end_bit   = int(end_bit, 0);
-            field_info = field_info_t(row_idx=row, col_idx=2, bit_mask=(pow(2, end_bit+1)-1)-(pow(2, start_bit)-1), bit_shift=start_bit);
-            self.field_infos.append(field_info);
-            text = str(sub_element.bit_width) + " bits in " + sub_element.bit_position + " SW_ATTR[" + sub_element.sw_attr + "]";
-            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
-            self.register_subfields_view.setItem(row, view_field.col_num, item);
-
-            view_field = self.view_fields[2];
-            headerLabels.append(view_field.col_name);
-            text = "--";
-            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
-            self.register_subfields_view.setItem(row, view_field.col_num, item);
-
-            view_field = self.view_fields[3];
-            headerLabels.append(view_field.col_name);
-            text = str(sub_element.default_val);
-            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
-            self.register_subfields_view.setItem(row, view_field.col_num, item);
-
-            view_field = self.view_fields[4];
-            headerLabels.append(view_field.col_name);
-            text = sub_element.description;
-            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
-            self.register_subfields_view.setItem(row, view_field.col_num, item);
-        self.register_subfields_view.setHorizontalHeaderLabels(headerLabels);
-        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);
-        self.register_update_button.clicked.connect(self.slot_register_update_clicked);
-        self.register_value_edit.editingFinished.connect(self.slot_register_update_write);
-
-        self.base_addr_edit.setText(self.toHex(self.register.base_addr));
-        self.offset_addr_edit.setText(self.toHex(self.register.offset_addr));
-        self.addr_offset_type.setCurrentIndex(0 if self.register.offset_size==1 else 1);
-
-        self.base_addr_edit.editingFinished.connect(self.slot_update_register_address);
-        self.addr_offset_type.currentIndexChanged.connect(self.slot_update_register_address);
-        self.offset_addr_edit.editingFinished.connect(self.slot_update_register_address);
-
-    def toHex(self, value):
-        return hex(value).upper().replace("X", "x");
-
-    def slot_base_addr_changed(self):
-        self.register.base_addr = self.toHex(self.base_addr_edit.text());
-
-    def slot_update_register_address(self):
-        base_addr = int(self.base_addr_edit.text(), 0);
-        offset_addr = int(self.offset_addr_edit.text(), 0);
-        offset_size = 1 if self.addr_offset_type.currentIndex()==0 else 4;
-        self.register.base_addr = base_addr;
-        self.register.offset_addr = offset_addr;
-        self.register.offset_size = offset_size;
-        self.register_addr = base_addr + offset_addr * offset_size;
-        self.register_name_disp.setText(self.register.name + "@" + self.toHex(self.register_addr));
-
-    def slot_offset_addr_changed(self):
-        self.register.offset_addr = self.toHex(self.offset_addr_edit.text());
-
-    def slot_register_set_value(self, value):
-        self.register_subfields_view.cellChanged.disconnect(self.write_register_from_subfields_value);
-        text = hex(value).upper().replace("X", "x");
-        self.register_value_edit.setText(text);
-        for field_info in self.field_infos:
-            sub_value = (value & field_info.bit_mask) >> field_info.bit_shift;
-            item = self.register_subfields_view.item(field_info.row_idx, field_info.col_idx);
-            if item==None:
-                set_trace();
-                pass;
-            text = hex(sub_value).upper().replace("X", "x");
-            item.setText(text);
-        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);
-
-    def slot_register_update_clicked(self):
-        value = self.model.read_register(self.register);
-        if value!=None:
-            self.slot_register_set_value(value);
-        else:
-            print("Read failed, investigate");
-
-    def slot_register_update_write(self):
-        text = self.register_value_edit.text();
-        write_value = int(text, 0);
-        write_success = self.model.write_register(self.register, write_value);
-        if not write_success:
-            print("Write failed, investigate");
-        if (write_success and (self.auto_read_mode.currentIndex()==0)):
-            read_value = self.model.read_register(self.register);
-            if read_value!=None:
-                self.slot_register_set_value(read_value);
-        else:
-            # Display the previous write value to all places
-            self.slot_register_set_value(write_value);
-
-    def write_register_from_subfields_value(self):
-        self.register_subfields_view.cellChanged.disconnect(self.write_register_from_subfields_value);
-        old_read_value = int(self.register_value_edit.text(), 0);
-        new_write_value = 0x00;
-        new_read_value  = None;
-        valid_value = True;
-        write_success = None;
-        for field_info in self.field_infos:
-            try:
-                sub_value = int(self.register_subfields_view.item(field_info.row_idx, field_info.col_idx).text(), 0);
-            except:
-                valid_value = False;
-                break;
-            max_value = field_info.bit_mask >> field_info.bit_shift;
-            if sub_value > max_value:
-                # Value greater than bit field for item;
-                valid_value = False;
-                break;
-            new_write_value = new_write_value | sub_value << field_info.bit_shift;
-        if valid_value:
-            write_success = self.model.write_register(self.register, new_write_value);
-            if write_success:
-                new_read_value = self.model.read_register(self.register);
-            else:
-                print("Write failed, investigate");
-        if new_read_value==None:
-            new_read_value = old_read_value;
-        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);
-        self.slot_register_set_value(new_read_value);
-
+#class register_table_t (QWidget, Ui_register_tab, QObject) :
+#
+#    # To store the columns and their spacing details
+#    view_fields = [view_field_t("Subfield Name", 0), view_field_t("Field desc", 1),
+#                   view_field_t("Value", 2), view_field_t("Default value", 3),
+#                   view_field_t("General Description", 4)];
+#
+#    def __init__(self, register, parent, model):
+#        super(register_table_t, self).__init__(parent);
+#        self.setupUi(self);
+#        self.show();
+#
+#        qDebug("register_table_t with register "+str(id(register)));
+#        self.register = register;
+#        self.register_addr = self.register.base_addr + self.register.offset_size * self.register.offset_addr;
+#        self.register_name_disp.setText(self.register.name + "@" + self.toHex(self.register_addr));
+#        self.model = model;
+#        self.field_infos = [];
+#        self.auto_read_mode.setEditable(True);
+#        self.auto_read_mode.lineEdit().setAlignment(Qt.AlignCenter)
+#        self.auto_read_mode.lineEdit().setReadOnly(True);
+#
+#        self.addr_offset_type.setEditable(True);
+#        self.addr_offset_type.lineEdit().setAlignment(Qt.AlignCenter)
+#        self.addr_offset_type.lineEdit().setReadOnly(True);
+#
+#        self.register_subfields_view.setRowCount(len(self.register.sub_elements));
+#        self.register_subfields_view.setColumnCount(len(self.view_fields));
+#        self.register_subfields_view.horizontalHeader().setResizeMode(QHeaderView.Stretch);
+#        self.register_subfields_view.verticalHeader().setResizeMode(QHeaderView.Stretch);
+#        self.register_subfields_view.verticalHeader().setVisible(False);
+#        headerLabels = [];
+#        qDebug("register_subfields_view items are set now");
+#        for row, sub_element in enumerate(self.register.sub_elements):
+#            view_field = self.view_fields[0];
+#            headerLabels.append(view_field.col_name);
+#            text = sub_element.name;
+#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
+#            self.register_subfields_view.setItem(row, view_field.col_num, item);
+#
+#            view_field = self.view_fields[1];
+#            headerLabels.append(view_field.col_name);
+#            positions = re.findall("[0-9]+", sub_element.bit_position);
+#            if len(positions)==1:
+#                start_bit = end_bit = positions[0];
+#            else:
+#                [end_bit, start_bit] = positions;
+#            start_bit = int(start_bit, 0);
+#            end_bit   = int(end_bit, 0);
+#            field_info = field_info_t(row_idx=row, col_idx=2, bit_mask=(pow(2, end_bit+1)-1)-(pow(2, start_bit)-1), bit_shift=start_bit);
+#            self.field_infos.append(field_info);
+#            text = str(sub_element.bit_width) + " bits in " + sub_element.bit_position + " SW_ATTR[" + sub_element.sw_attr + "]";
+#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
+#            self.register_subfields_view.setItem(row, view_field.col_num, item);
+#
+#            view_field = self.view_fields[2];
+#            headerLabels.append(view_field.col_name);
+#            text = "--";
+#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
+#            self.register_subfields_view.setItem(row, view_field.col_num, item);
+#
+#            view_field = self.view_fields[3];
+#            headerLabels.append(view_field.col_name);
+#            text = str(sub_element.default_val);
+#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
+#            self.register_subfields_view.setItem(row, view_field.col_num, item);
+#
+#            view_field = self.view_fields[4];
+#            headerLabels.append(view_field.col_name);
+#            text = sub_element.description;
+#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter);
+#            self.register_subfields_view.setItem(row, view_field.col_num, item);
+#        self.register_subfields_view.setHorizontalHeaderLabels(headerLabels);
+#        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);
+#        self.register_update_button.clicked.connect(self.slot_register_update_clicked);
+#        self.register_value_edit.editingFinished.connect(self.slot_register_update_write);
+#
+#        self.base_addr_edit.setText(self.toHex(self.register.base_addr));
+#        self.offset_addr_edit.setText(self.toHex(self.register.offset_addr));
+#        self.addr_offset_type.setCurrentIndex(0 if self.register.offset_size==1 else 1);
+#
+#        self.base_addr_edit.editingFinished.connect(self.slot_update_register_address);
+#        self.addr_offset_type.currentIndexChanged.connect(self.slot_update_register_address);
+#        self.offset_addr_edit.editingFinished.connect(self.slot_update_register_address);
+#
+#    def toHex(self, value):
+#        return hex(value).upper().replace("X", "x");
+#
+#    def slot_base_addr_changed(self):
+#        self.register.base_addr = self.toHex(self.base_addr_edit.text());
+#
+#    def slot_update_register_address(self):
+#        base_addr = int(self.base_addr_edit.text(), 0);
+#        offset_addr = int(self.offset_addr_edit.text(), 0);
+#        offset_size = 1 if self.addr_offset_type.currentIndex()==0 else 4;
+#        self.register.base_addr = base_addr;
+#        self.register.offset_addr = offset_addr;
+#        self.register.offset_size = offset_size;
+#        self.register_addr = base_addr + offset_addr * offset_size;
+#        self.register_name_disp.setText(self.register.name + "@" + self.toHex(self.register_addr));
+#
+#    def slot_offset_addr_changed(self):
+#        self.register.offset_addr = self.toHex(self.offset_addr_edit.text());
+#
+#    def slot_register_set_value(self, value):
+#        self.register_subfields_view.cellChanged.disconnect(self.write_register_from_subfields_value);
+#        text = hex(value).upper().replace("X", "x");
+#        self.register_value_edit.setText(text);
+#        for field_info in self.field_infos:
+#            sub_value = (value & field_info.bit_mask) >> field_info.bit_shift;
+#            item = self.register_subfields_view.item(field_info.row_idx, field_info.col_idx);
+#            if item==None:
+#                set_trace();
+#                pass;
+#            text = hex(sub_value).upper().replace("X", "x");
+#            item.setText(text);
+#        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);
+#
+#    def slot_register_update_clicked(self):
+#        value = self.model.read_register(self.register);
+#        if value!=None:
+#            self.slot_register_set_value(value);
+#        else:
+#            print("Read failed, investigate");
+#
+#    def slot_register_update_write(self):
+#        text = self.register_value_edit.text();
+#        write_value = int(text, 0);
+#        write_success = self.model.write_register(self.register, write_value);
+#        if not write_success:
+#            print("Write failed, investigate");
+#        if (write_success and (self.auto_read_mode.currentIndex()==0)):
+#            read_value = self.model.read_register(self.register);
+#            if read_value!=None:
+#                self.slot_register_set_value(read_value);
+#        else:
+#            # Display the previous write value to all places
+#            self.slot_register_set_value(write_value);
+#
+#    def write_register_from_subfields_value(self):
+#        self.register_subfields_view.cellChanged.disconnect(self.write_register_from_subfields_value);
+#        old_read_value = int(self.register_value_edit.text(), 0);
+#        new_write_value = 0x00;
+#        new_read_value  = None;
+#        valid_value = True;
+#        write_success = None;
+#        for field_info in self.field_infos:
+#            try:
+#                sub_value = int(self.register_subfields_view.item(field_info.row_idx, field_info.col_idx).text(), 0);
+#            except:
+#                valid_value = False;
+#                break;
+#            max_value = field_info.bit_mask >> field_info.bit_shift;
+#            if sub_value > max_value:
+#                # Value greater than bit field for item;
+#                valid_value = False;
+#                break;
+#            new_write_value = new_write_value | sub_value << field_info.bit_shift;
+#        if valid_value:
+#            write_success = self.model.write_register(self.register, new_write_value);
+#            if write_success:
+#                new_read_value = self.model.read_register(self.register);
+#            else:
+#                print("Write failed, investigate");
+#        if new_read_value==None:
+#            new_read_value = old_read_value;
+#        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value);
+#        self.slot_register_set_value(new_read_value);
+#
 class regbank_main_window_t(Ui_regbank_reader_main, QObject):
     def __init__(self):
         super(regbank_main_window_t, self).__init__();
         self.target_list = [];
-        self.registers_list = [];
         self.register_tabs = {};
-        self.sheet_list = [];
-        self.base_addr = None;
-        self.offset_size = None;
         self.model = regbank_reader_model_t();
         self.valid_db = False;
-
-
-    signal_get_register = pyqtSignal(int,int,int);
-    signal_load_regbank = pyqtSignal(str);
-    signal_connect_target = pyqtSignal(target_t);
-    signal_regbank_additional_info = pyqtSignal(regbank_additional_info_t);
-    signal_register_selected = pyqtSignal(int, int, int);
 
     def initialize(self):
         self.target_button.setEnabled(False);
@@ -232,7 +219,7 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
         self.target_button.clicked.connect(self.slot_target_button_clicked);
         self.model.initialize();
 
-    def slot_set_target_list(self, targets):
+    def slot_targets_list_updated(self, targets):
         self.target_button.setEnabled(True);
         self.targets_list = targets;
         self.target_selection.clear();

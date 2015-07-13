@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file './client/register_tab.ui'
+# Form implementation generated from reading ui file 'register_tab.ui'
 #
-# Created: Tue Jun  9 01:26:07 2015
-#      by: PyQt4 UI code generator 4.10.4
+# Created by: PyQt4 UI code generator 4.11.5-snapshot-3f0dad48ec97
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -126,6 +125,18 @@ class Ui_register_tab(object):
         self.register_subfields_view.setColumnCount(0)
         self.register_subfields_view.setRowCount(0)
         self.verticalLayout.addWidget(self.register_subfields_view)
+        self.register_subfields_view.raise_()
+        self.label_2.raise_()
+        self.register_update_button.raise_()
+        self.label_4.raise_()
+        self.addr_offset_type.raise_()
+        self.register_value_edit.raise_()
+        self.line.raise_()
+        self.line_2.raise_()
+        self.register_value_edit.raise_()
+        self.auto_read_mode.raise_()
+        self.label_5.raise_()
+        self.label.raise_()
 
         self.retranslateUi(register_tab)
         QtCore.QMetaObject.connectSlotsByName(register_tab)

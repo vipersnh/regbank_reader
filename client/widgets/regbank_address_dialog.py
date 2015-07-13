@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file './regbank_address_dialog.ui'
+# Form implementation generated from reading ui file 'regbank_address_dialog.ui'
 #
-# Created: Tue Jun  9 00:11:54 2015
-#      by: PyQt4 UI code generator 4.10.4
+# Created by: PyQt4 UI code generator 4.11.5-snapshot-3f0dad48ec97
 #
 # WARNING! All changes made in this file will be lost!
 
