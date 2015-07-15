@@ -5,7 +5,7 @@ X86_M32_CC 		:= 	gcc
 X86_M32_CXX 	:= 	g++
 X86_M32_LINK 	:= 	g++
 X86_M32_CFLAGS  := -Wall -g -pthread -m32
-X86_M32_CXXFLAGS  := -Wall -g -pthread
+X86_M32_CXXFLAGS  := -Wall -g -pthread -DPLATFORM=HOST
 X86_M32_INC	    := $(SERVER_INC)
 X86_M32_CSRCS   := 
 X86_M32_CXXSRCS := $(SERVER_CXX_SRCS)

@@ -1,6 +1,8 @@
 #ifndef _UTILS_H_
 #define _UTILS_H_
 
+#define HOST            0
+#define TARGET          1
 
 typedef enum {
     ASSERT_NONFATAL,

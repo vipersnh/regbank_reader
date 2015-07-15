@@ -5,11 +5,15 @@ from regbank_parser import offsets_enum_t
 import regbank_parser
 from client import *
 from os.path import dirname
+from sys import exit
+from StructDict import StructDict
 import re
 
 target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
                                        "max_msg_len"])
-
+bitfield_t   = StructDict("bitfield_t", ["bitfield_value", "bitfield_mask", 
+                                         "bitfield_rshift", "bitfield_end",
+                                         "bitfield_start"])
 #class regbank_reader_model_t(QObject):
 #    signal_targets_info  = pyqtSignal(list)
 #    signal_target_connection_status = pyqtSignal(str)
@@ -140,18 +144,6 @@ target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
 #        else:
 #            assert(0)
 #
-#    def update_mmap(self, start_addr, end_addr):
-#        self.mmap_done = True
-#        msg_mmap_init = msg_req_t()
-#        msg_mmap_init.handle = id(start_addr)+id(end_addr)
-#        msg_mmap_init.req_type = MEM_MAP_SPACE_REQ
-#        msg_mmap_init.start_addr = start_addr
-#        msg_mmap_init.end_addr   = end_addr
-#        resp = self.client.query_server(msg_mmap_init)
-#        if resp.status==STATUS_OK:
-#            self.mmap_done = True
-#        else:
-#            print("MMAP Failed on server side!")
 #    
 #    def update_regbank_additional_info(self, regbank_info):
 #        for idx, val in enumerate(self.regbank_db_list):
@@ -217,20 +209,25 @@ target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
 class regbank_reader_model_t (QObject):
     # Signals
     signal_targets_list_updated = pyqtSignal(list)
-    signal_target_connected = pyqtSignal(str)
-    signal_target_disconnected = pyqtSignal(str)
+    signal_target_connected = pyqtSignal(target_t)
+    signal_target_disconnected = pyqtSignal(target_t)
     signal_tib_file_loaded = pyqtSignal(str)
     signal_regbank_file_loaded = pyqtSignal(str)
 
     target_search_thread = None
     keep_alive_thread = None
 
-    def __init__(self, server_udp_port=2222):
+    def __init__(self, tib_file=None, server_udp_port=2222):
         super(regbank_reader_model_t, self).__init__()
         self.db = regbank_parser.db # Reference to actual database
         self.client = client_t(server_udp_port)
         self.targets_list = []
         self.target_connected = False
+        self.cmd_line = False
+        if tib_file:
+            self.cmd_line = True
+            self.parse_tib_file(tib_file)
+            exit(0)
 
     def initialize(self):
         self.target_search_thread = QThread()
@@ -251,6 +248,8 @@ class regbank_reader_model_t (QObject):
 
         if not target_already_listed:
             self.targets_list.append(target)
+        
+        self.signal_targets_list_updated.emit(self.targets_list)
         
     def target_search(self):
         print("Target search thread started")
@@ -277,18 +276,37 @@ class regbank_reader_model_t (QObject):
         self.selected_target = target
         self.client.connect_to_server([target.protocol, target.ip_addr, 
                 target.port, target.max_msg_len])
+        self.signal_target_connected.emit(target)
 
-    def disconnect_target(self, target):
+    def disconnect_from_target(self, target):
         self.target_connected = False
         self.selected_target = None
         self.client.disconnect_server()
+        self.signal_target_disconnected.emit(target)
 
-    def read_address(self, address):
+    def create_mem_map(self, start_addr, end_addr):
+        msg_mmap_init = msg_req_t()
+        msg_mmap_init.handle = id(start_addr)+id(end_addr)
+        msg_mmap_init.req_type = MEM_MAP_SPACE_REQ
+        msg_mmap_init.start_addr = start_addr
+        msg_mmap_init.end_addr   = end_addr
+        resp = self.client.query_server(msg_mmap_init)
+        if resp.status==STATUS_OK:
+            return True
+        else:
+            return False
+        
+
+
+    def read_address(self, address, dynamic_mmap=True):
         if __debug__:
-            return 0x00
+            return 0xABCDEFAB
         msg_read = msg_req_t()
         msg_read.handle = id(address)
-        msg_read.req_type = WORD_READ_REQ_UNMAPPED
+        if dynamic_mmap:
+            msg_read.req_type = WORD_READ_REQ_UNMAPPED
+        else:
+            msg_read.req_type = WORD_READ_REQ
         msg_read.addr = address
         resp = self.client.query_server(msg_read)
         assert(resp.handle==msg_read.handle)
@@ -312,11 +330,85 @@ class regbank_reader_model_t (QObject):
         else:
             return False; # Write failed
 
+    def display_read_register(self, register_name, subfields, value, bitfield=None):
+        if bitfield:
+            print("{0}.{1}.{2}")
+        for subfield in subfields:
+            print("{0}.{1}.{2}")
+
+    def read_register(self, regbank_name, sheet_name, register_name, 
+            subfield_name=None, bitfield=None):
+        try:
+            sheet = self.db[regbank_name][sheet_name]
+            register = sheet.registers[register_name]
+            addr = sheet.base_addr + register.offset_addr * \
+                    (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)
+            value = self.read_address(addr, dynamic_mmap=False)
+            if subfield_name:
+                bit_pos = register.subfields[subfield_name]
+                start = bit_pos[0]
+                end = bit_pos[-1]
+                bitfield.bitfield_start += start
+                bitfield.bitfield_end   += start
+                bitfield.bitfield_value <<= start
+                if bitfield.bitfield_value:
+                    assert bitfield.start <= end and bitfield.end <= end
+                    value = value & bitfield.bitfield_value
+                subfield = register.subfields[subfield_name]
+                self.display_read_register(register_name, [subfield], value, bitfield)
+            else:
+                if bitfield.bitfield_value:
+                    pass
+                else:
+                    self.display_read_register(register_name, register.subfields, value)
+        except:
+            set_trace()
+            pass
+
     def parse_tib(self, tib, tib_file_path):
-        if re.search("^\*", tib):
+        if self.cmd_line and not self.target_connected:
+            if re.search(" *connect", tib):
+                # Connect to target specified
+                tib = tib.replace("connect", '')
+                [ip_port, protocol] = tib.split("over")
+                [ip, port] = ip_port.replace(' ', '').split(':')
+                target = target_t(ip, port, protocol, 0)
+                self.connect_to_target(target)
+                return
+            else:
+                print("\"connect\" command not found when using command line execution")
+                exit(0)
+        
+        bitfield = bitfield_t()
+        bitfield.bitfield_value = 0
+        bitfield.bitfield_mask   = 0xFFFFFFFF
+        bitfield.bitfield_rshift = 0
+        bitfield.bitfield_end    = 31
+        bitfield.bitfield_start  = 0
+        if re.search("\[.*\]", tib):
+            bitfield_str = re.split(" *\]", re.split(" *\[ *", tib)[1])[0]
+            if re.search(':', bitfield_str):
+                [end, start] = re.split(' *: *', bitfield_str)
+                end = int(end)
+                start = int(start)
+            else:
+                start = end = int(bitfield_str)
+            bitfield.bitfield_value = ((1<<(end+1))) - ((1<<(start)))
+            bitfield.bitfield_rshift = start
+            bitfield.bitfield_mask = bitfield.bitfield_value >> bitfield.bitfield_rshift
+            bitfield.bitfield_end   = end
+            bitfield.bitfield_start = start
+            tib = "".join(re.split("\[.*\]", tib))
+            print(bin(bitfield.bitfield_value))
+
+
+        if re.search(" *^\*", tib):
             # Read or write access tib
             tib = tib[1:]
+
+
             if '.' in tib:
+                # Using named access
                 [reg_str, valmask] = re.split(" *= *", tib)
                 regbank_name = sheet_name = register_name = subfield_name = None
                 if reg_str.count('.')==3:
@@ -329,41 +421,70 @@ class regbank_reader_model_t (QObject):
                     assert 0, "Invalid register read command specified"
 
                 if re.search("\?$", tib):
-                    pass
+                    # Read register specified
+                    self.read_register(regbank_name, sheet_name, register_name,
+                            subfield_name, bitfield)
+
                 elif re.search("\?", tib):
+                    # Read-modify-write register specified
                     pass
                 else :
+                    # Write register specified
                     pass
             else:
+                # Using address access
                 [addr, valmask] = re.split(" *= *", tib)
                 addr = int(addr, 0)
                 if re.search("\?$", tib):
                     # Read address
                     value = self.read_address(addr)
                     if value != None:
-                        print("* {0} = {1} ".format(hex(addr), hex(value)))
+                        print("* {0} [{1}:{2}] = {3} ".format(hex(addr),
+                                bitfield.bitfield_end, bitfield.bitfield_start,
+                                hex((value & bitfield.bitfield_mask ) >>
+                                bitfield.bitfield_rshift)))
                     else:
-                        print("* {0} : Read failed ".format(hex(addr)))
+                        print("* {0} [{1}:{2}]: Read failed ".format(hex(addr),
+                                bitfield.bitfield_end, bitfield.bitfield_start))
                 elif re.search("\?", valmask):
                     # Read modify write
                     value = eval(valmask.replace('?', ''))
                     read_value = self.read_address(addr)
-                    value |= read_value
-                    if self.write_address(addr, value):
-                        print("* {0} = {1} : Write success ".format(hex(addr), 
-                                hex(value)))
+                    write_value = read_value
+                    if bitfield.bitfield_value:
+                        if value > (value & bitfield.bitfield_mask) :
+                            print ("Warning : Value specified exceeds the"
+                                    " bit field specified")
+                        write_value |= (value & bitfield.bitfield_mask) << \
+                            bitfield.bitfield_rshift
                     else:
-                        print("* {0} = {1} : Write failed ".format(hex(addr), 
-                                hex(value)))
+                        write_value |= value
+
+                    if self.write_address(addr, write_value):
+                        print("* {0} [{1}:{2}] = {3} : Read-modify-write "
+                                    "success ".format(hex(addr), bitfield.bitfield_end,
+                                    bitfield.bitfield_start, hex(write_value)))
+                    else:
+                        print("* {0} [{1}:{2}] = {3} : Read-modify-write "
+                                "failed ".format(hex(addr), bitfield.bitfield_end,
+                                    bitfield.bitfield_start, hex(write_value)))
                 else:
                     # Write address
                     value = eval(valmask)
-                    if self.write_address(addr, value):
-                        print("* {0} = {1} : Read-modify-write success ".format(hex(addr), 
-                                hex(value)))
+                    write_value = 0
+                    if bitfield.bitfield_value:
+                        if value > (value & bitfield.bitfield_mask) :
+                            print ("Warning : Value specified exceeds the"
+                                    " bit field specified")
+                        write_value |= (value & bitfield.bitfield_mask) << bitfield.bitfield_rshift
                     else:
-                        print("* {0} = {1} : Read-modify-write failed ".format(hex(addr), 
-                                hex(value)))
+                        write_value |= value
+                    if self.write_address(addr, write_value):
+                        print("* {0} [{1}:{2}] = {3} : Write success ".format(hex(addr), 
+                                bitfield.bitfield_end, bitfield.bitfield_start, hex(write_value)))
+                    else:
+                        print("* {0} [{1}:{2}] = {3} : Write failed ".format(hex(addr), 
+                                bitfield.bitfield_end, bitfield.bitfield_start, hex(write_value)))
             return
 
         if re.search(" *^load_regbank", tib):
@@ -380,6 +501,7 @@ class regbank_reader_model_t (QObject):
             [ _ , regbank_name] = re.split(" +", tib)
             print("Unloading regbank {0}".format(regbank_name))
             regbank_parser.regbank_unload(regbank_name)
+            return
 
         if re.search("^load_sheet", tib):
             # Load the regbank sheet into database 
@@ -412,6 +534,12 @@ class regbank_reader_model_t (QObject):
                     sheet_name, regbank_name, as_sheet))
             regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
                     offset_type, as_sheet)
+            # MMAP the sheet space
+            assert self.target_connected, "Target must be connected to load regbank sheets"
+            sheet = self.db[regbank_name][as_sheet]
+            success = self.create_mem_map(sheet.start_addr, sheet.end_addr)
+            if not success:
+                assert 0, "MMAP failed on server side"
             return
 
         if re.search(" *^unload_sheet", tib):
@@ -421,11 +549,12 @@ class regbank_reader_model_t (QObject):
             [regbank_name, sheet_name] = arg_str.split('.')
             print("Unloading sheet {0} from {1}".format(sheet_name, regbank_name))
             regbank_parser.regbank_unload_sheet(regbank_name, sheet_name)
+            return
 
 
     def parse_tib_file(self, tib_file):
         tib_file_path = dirname(tib_file)
-        if not self.target_connected:
+        if not self.target_connected and not self.cmd_line:
             assert 0, "Target must be connected before parsing tib file"
         
         with open(tib_file, "r") as f :
@@ -443,7 +572,7 @@ class regbank_reader_model_t (QObject):
                     tib = tib[:tib.find('#')].strip()
                 
                 self.parse_tib(tib, tib_file_path)
-        signal_tib_file_loaded.emit(tib_file)        
+        self.signal_tib_file_loaded.emit(tib_file)        
 
 if __name__ == "__main__":
     import argparse

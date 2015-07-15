@@ -5,6 +5,9 @@ Basic usage
 ===========
     1) Each line starting with '#' or having '#' in the middle are treated 
        as comments after the first occurance of '#' character.
+    2) <> indicates mandatory fields, and
+       [] indicates optional field.
+       Note, that [] indicates bitfield access when used in the command
     2) Number notations as follows can be used where-ever integer is expected
         - Decimal : [0-9]\+
         - Hex     : 0x[0-9A-F]\+
@@ -26,11 +29,22 @@ Basic usage
             - syntax    : *<addr> = ? <value> [ & value_mask]
             - example   : *0x1000 =?0x20
                           *0x100  = ? 0x20 & 0b11
-
+    3) Each command accessing an address can access in bitfields using
+       bitfield operator like (15:0)
+        - example : *0x100(3:2) = 10
 
 Advanced usage
 ==============
-    1) File loading commands
+    1) Target connection commands
+            - pre-reqs  : None
+            - syntax    : connect <ip_addr/host_name>:<port_num> over <protocol>
+            - example   : connect 192.168.1.1 : 5555 over tcp
+            - note      : For specifying host name the server must have a host name.
+                          If connect fails, then application will just exit.
+                          In case of GUI run, this command is ignored.
+                          This must be the first command if specified in command line
+                          usage.
+    2) File loading commands
         - load_regbank  : Loads the specified register file into database for 
                           operations
             - pre-reqs  : None
@@ -71,7 +85,7 @@ Advanced usage
                           load_sheet demo_regbank.Sheet_A at 0x400400
                           unload_sheet demo_regbank.Sheet_A
     
-    2) Register read and write commands
+    3) Register read and write commands
         - Register Access for writing :
             - syntax    : *<regbank>.<sheet_name>.<register_name>[.<field_name>] = 
                                    <value> [ & value_mask ]
@@ -82,6 +96,16 @@ Advanced usage
             - syntax    : *<regbank>.<sheet_name>.<register_name>[.<field_name>] = ?
             - example   : *demo_regbank.Sheet_A.Register_A = ?
                           *demo_regbank.Sheet_A.Register_A.Subfield_A_A = ?
+    4) Each command accessing an address can access in bitfields using
+       bitfield operator like (15:0)
+        - example : *demo_regbank.Sheet_A.Register_A(9:2) = 10
 
 
-
+CMD Line Usage
+==============
+    1) Starting the application
+        - Application must be started with tib_file as only single argument
+    2) Connecting to target
+        - Always first command in the tib file must be a connect command,
+          else targets are confirmed via command line.
+    

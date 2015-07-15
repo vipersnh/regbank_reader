@@ -51,6 +51,14 @@ def regbank_decode_register(rows) :
         subfield_name = row[regbank_info["sub_field_name_col"]].value
         subfield.bit_width = int(row[regbank_info["bit_width_col"]].value)
         subfield.bit_position = row[regbank_info["bit_position_col"]].value
+        assert 'x' not in subfield.bit_position, "Invalid x in bit_position field"
+        if ':' in subfield.bit_position:
+            [end, start] = re.findall("\d+", subfield.bit_position)
+        else:
+            [start] = re.findall("\d+", subfield.bit_position)
+            end = start
+        start = int(start); end = int(end)
+        subfield.bit_position = list(range(start, end+1))
         subfield.sw_attr = sw_attr
         subfield.hw_attr = hw_attr
         subfield.default_val = row[regbank_info["default_value_col"]].value
@@ -88,9 +96,8 @@ def regbank_get_sheetnames(fname):
     pass
 
 
-def regbank_load_sheet(regbank_name, sheet_name, base_addr, 
-                       offset_type=offsets_enum_t.BYTE_OFFSETS, 
-                       as_sheet_name=None):
+def  regbank_load_sheet(regbank_name, sheet_name, 
+        base_addr, offset_type=offsets_enum_t.BYTE_OFFSETS, as_sheet_name=None):
     assert regbank_name in regbank_files.keys(), \
             "Regbank file must be loaded before loading sheets"
     workbook = xlrd.open_workbook(regbank_files[regbank_name])
@@ -141,6 +148,7 @@ def regbank_load_sheet(regbank_name, sheet_name, base_addr,
     db[regbank_name][sheet_name].end_addr = \
             db[regbank_name][sheet_name].registers[last_register_name].offset_addr * \
             (1 if offset_type==offsets_enum_t.BYTE_OFFSETS else 4) + base_addr
+    return [regbank_name, sheet_name]
 
 def regbank_unload_sheet(regbank_name, sheet_name):
     if regbank_name in db.keys():

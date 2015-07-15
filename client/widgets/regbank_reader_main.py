@@ -2,7 +2,8 @@
 
 # Form implementation generated from reading ui file './regbank_reader_main.ui'
 #
-# Created by: PyQt4 UI code generator 4.11.5-snapshot-3f0dad48ec97
+# Created: Mon Jul 13 16:42:17 2015
+#      by: PyQt4 UI code generator 4.9.1
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -11,16 +12,7 @@ from PyQt4 import QtCore, QtGui
 try:
     _fromUtf8 = QtCore.QString.fromUtf8
 except AttributeError:
-    def _fromUtf8(s):
-        return s
-
-try:
-    _encoding = QtGui.QApplication.UnicodeUTF8
-    def _translate(context, text, disambig):
-        return QtGui.QApplication.translate(context, text, disambig, _encoding)
-except AttributeError:
-    def _translate(context, text, disambig):
-        return QtGui.QApplication.translate(context, text, disambig)
+    _fromUtf8 = lambda s: s
 
 class Ui_regbank_reader_main(object):
     def setupUi(self, regbank_reader_main):
@@ -80,10 +72,6 @@ class Ui_regbank_reader_main(object):
         self.tibPathDisp.setReadOnly(True)
         self.tibPathDisp.setObjectName(_fromUtf8("tibPathDisp"))
         self.gridLayout_2.addWidget(self.tibPathDisp, 1, 1, 1, 1)
-        self.loadRegbankButton.raise_()
-        self.loadTIBButton.raise_()
-        self.regbankPathDisp.raise_()
-        self.tibPathDisp.raise_()
         self.gridLayout_3.addWidget(self.groupBox_2, 1, 0, 1, 1)
         spacerItem1 = QtGui.QSpacerItem(349, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
         self.gridLayout_3.addItem(spacerItem1, 1, 1, 1, 1)
@@ -240,6 +228,7 @@ class Ui_regbank_reader_main(object):
         self.line.setLineWidth(10)
         self.line.setMidLineWidth(15)
         self.line.setFrameShape(QtGui.QFrame.HLine)
+        self.line.setFrameShadow(QtGui.QFrame.Sunken)
         self.line.setObjectName(_fromUtf8("line"))
         self.verticalLayout_8.addWidget(self.line)
         self.horizontalLayout_7 = QtGui.QHBoxLayout()
@@ -294,29 +283,29 @@ class Ui_regbank_reader_main(object):
         QtCore.QMetaObject.connectSlotsByName(regbank_reader_main)
 
     def retranslateUi(self, regbank_reader_main):
-        regbank_reader_main.setWindowTitle(_translate("regbank_reader_main", "MainWindow", None))
-        self.groupBox.setTitle(_translate("regbank_reader_main", "Target Initialization", None))
-        self.targetButton.setText(_translate("regbank_reader_main", "Connect", None))
-        self.groupBox_2.setTitle(_translate("regbank_reader_main", "Regbank Initialization", None))
-        self.loadRegbankButton.setText(_translate("regbank_reader_main", "Load regbank excel", None))
-        self.loadTIBButton.setText(_translate("regbank_reader_main", "Load TIB file", None))
-        self.mainTabWidget.setTabText(self.mainTabWidget.indexOf(self.initializationTab), _translate("regbank_reader_main", "Initialization", None))
-        self.label.setText(_translate("regbank_reader_main", "Select Regbank", None))
-        self.label_2.setText(_translate("regbank_reader_main", "Select Sheet", None))
-        self.label_3.setText(_translate("regbank_reader_main", "Select Register", None))
-        self.label_6.setText(_translate("regbank_reader_main", "Selected", None))
-        self.label_4.setText(_translate("regbank_reader_main", "Sheet Base Address", None))
-        self.label_5.setText(_translate("regbank_reader_main", "Sheet Offsets", None))
-        self.mainTabWidget.setTabText(self.mainTabWidget.indexOf(self.regbankTab), _translate("regbank_reader_main", "Regbank", None))
-        self.label_8.setText(_translate("regbank_reader_main", "Enter TIB\'s", None))
-        self.runTibCommandsButton.setText(_translate("regbank_reader_main", "Run TIB\'s", None))
-        self.clearTbCommandsButton.setText(_translate("regbank_reader_main", "Clear TIB\'s", None))
-        self.label_9.setText(_translate("regbank_reader_main", "TIB Processor Output", None))
-        self.clearTibsOutputButton.setText(_translate("regbank_reader_main", "Clear Outputs", None))
-        self.mainTabWidget.setTabText(self.mainTabWidget.indexOf(self.tibProcessorTab), _translate("regbank_reader_main", "TIB Processor", None))
-        self.menuFile.setTitle(_translate("regbank_reader_main", "Fi&le", None))
-        self.menuHelp.setTitle(_translate("regbank_reader_main", "Help", None))
-        self.actionLoad_Regbank.setText(_translate("regbank_reader_main", "Load Regbank", None))
-        self.actionExit.setText(_translate("regbank_reader_main", "Exit", None))
-        self.actionAbout.setText(_translate("regbank_reader_main", "About", None))
+        regbank_reader_main.setWindowTitle(QtGui.QApplication.translate("regbank_reader_main", "MainWindow", None, QtGui.QApplication.UnicodeUTF8))
+        self.groupBox.setTitle(QtGui.QApplication.translate("regbank_reader_main", "Target Initialization", None, QtGui.QApplication.UnicodeUTF8))
+        self.targetButton.setText(QtGui.QApplication.translate("regbank_reader_main", "Connect", None, QtGui.QApplication.UnicodeUTF8))
+        self.groupBox_2.setTitle(QtGui.QApplication.translate("regbank_reader_main", "Regbank Initialization", None, QtGui.QApplication.UnicodeUTF8))
+        self.loadRegbankButton.setText(QtGui.QApplication.translate("regbank_reader_main", "Load regbank excel", None, QtGui.QApplication.UnicodeUTF8))
+        self.loadTIBButton.setText(QtGui.QApplication.translate("regbank_reader_main", "Load TIB file", None, QtGui.QApplication.UnicodeUTF8))
+        self.mainTabWidget.setTabText(self.mainTabWidget.indexOf(self.initializationTab), QtGui.QApplication.translate("regbank_reader_main", "Initialization", None, QtGui.QApplication.UnicodeUTF8))
+        self.label.setText(QtGui.QApplication.translate("regbank_reader_main", "Select Regbank", None, QtGui.QApplication.UnicodeUTF8))
+        self.label_2.setText(QtGui.QApplication.translate("regbank_reader_main", "Select Sheet", None, QtGui.QApplication.UnicodeUTF8))
+        self.label_3.setText(QtGui.QApplication.translate("regbank_reader_main", "Select Register", None, QtGui.QApplication.UnicodeUTF8))
+        self.label_6.setText(QtGui.QApplication.translate("regbank_reader_main", "Selected", None, QtGui.QApplication.UnicodeUTF8))
+        self.label_4.setText(QtGui.QApplication.translate("regbank_reader_main", "Sheet Base Address", None, QtGui.QApplication.UnicodeUTF8))
+        self.label_5.setText(QtGui.QApplication.translate("regbank_reader_main", "Sheet Offsets", None, QtGui.QApplication.UnicodeUTF8))
+        self.mainTabWidget.setTabText(self.mainTabWidget.indexOf(self.regbankTab), QtGui.QApplication.translate("regbank_reader_main", "Regbank", None, QtGui.QApplication.UnicodeUTF8))
+        self.label_8.setText(QtGui.QApplication.translate("regbank_reader_main", "Enter TIB\'s", None, QtGui.QApplication.UnicodeUTF8))
+        self.runTibCommandsButton.setText(QtGui.QApplication.translate("regbank_reader_main", "Run TIB\'s", None, QtGui.QApplication.UnicodeUTF8))
+        self.clearTbCommandsButton.setText(QtGui.QApplication.translate("regbank_reader_main", "Clear TIB\'s", None, QtGui.QApplication.UnicodeUTF8))
+        self.label_9.setText(QtGui.QApplication.translate("regbank_reader_main", "TIB Processor Output", None, QtGui.QApplication.UnicodeUTF8))
+        self.clearTibsOutputButton.setText(QtGui.QApplication.translate("regbank_reader_main", "Clear Outputs", None, QtGui.QApplication.UnicodeUTF8))
+        self.mainTabWidget.setTabText(self.mainTabWidget.indexOf(self.tibProcessorTab), QtGui.QApplication.translate("regbank_reader_main", "TIB Processor", None, QtGui.QApplication.UnicodeUTF8))
+        self.menuFile.setTitle(QtGui.QApplication.translate("regbank_reader_main", "Fi&le", None, QtGui.QApplication.UnicodeUTF8))
+        self.menuHelp.setTitle(QtGui.QApplication.translate("regbank_reader_main", "Help", None, QtGui.QApplication.UnicodeUTF8))
+        self.actionLoad_Regbank.setText(QtGui.QApplication.translate("regbank_reader_main", "Load Regbank", None, QtGui.QApplication.UnicodeUTF8))
+        self.actionExit.setText(QtGui.QApplication.translate("regbank_reader_main", "Exit", None, QtGui.QApplication.UnicodeUTF8))
+        self.actionAbout.setText(QtGui.QApplication.translate("regbank_reader_main", "About", None, QtGui.QApplication.UnicodeUTF8))
 

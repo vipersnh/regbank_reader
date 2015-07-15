@@ -46,13 +46,15 @@ void msg_parser_init()
     for (idx=0; idx < MAX_MMAPS_PER_CONNECTION; idx++) {
         g_msg_parser_ctxt->parser_state[idx] = MSG_PARSER_UNINITIALIZED_STATE;
     }
-    g_msg_parser_ctxt->mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
-    if (g_msg_parser_ctxt->mem_fd < 0) {
-        perror("open(/dev/mem, O_RDWR | O_SYNC) failed");
-        assert(0, ASSERT_NONFATAL);
-        g_msg_parser_ctxt->parser_state[g_msg_parser_ctxt->num_mmaps] =
-            MSG_PARSER_UNINITIALIZED_STATE;
-    }
+    #if PLATFORM != HOST
+        g_msg_parser_ctxt->mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+        if (g_msg_parser_ctxt->mem_fd < 0) {
+            perror("open(/dev/mem, O_RDWR | O_SYNC) failed");
+            assert(0, ASSERT_NONFATAL);
+            g_msg_parser_ctxt->parser_state[g_msg_parser_ctxt->num_mmaps] =
+                MSG_PARSER_UNINITIALIZED_STATE;
+        }
+    #endif
 }
 
 static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
@@ -111,7 +113,7 @@ static void msg_parser_resp(msg_handle_type_t msg_handle,
 static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
 {
     msg_val_t ret_val = -1;
-#if 0
+#if PLATFORM == HOST
     return 0xABCDEFA;
 #endif
     switch (val_size) {
@@ -138,6 +140,9 @@ static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
 
 void write_value(msg_address_t addr, msg_val_t val, uint8_t val_size)
 {
+#if PLATFORM == HOST
+    return;
+#endif
     switch (val_size) {
         case 1:
             {
@@ -211,8 +216,8 @@ void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
             status = STATUS_FAIL;
         }
         msg_parser_resp(req->handle, req->req_type, status);
-    } else if (req->type==WORD_READ_REQ_UNMAPPED || 
-            req->type==WORD_WRITE_REQ_UNMAPPED) {
+    } else if (req->req_type==WORD_READ_REQ_UNMAPPED || 
+            req->req_type==WORD_WRITE_REQ_UNMAPPED) {
         msg_address_t start_addr, end_addr;
         start_addr = req->addr;
         end_addr   = req->addr+1;
