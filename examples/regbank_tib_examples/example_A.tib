@@ -2,7 +2,7 @@
 # Lines containing '#' after each tib is treated as a comment
 
 
-connect 192.168.32.12 : 3333 over tcp
+connect 192.168.1.2 : 3333 over tcp
 *0x10000 = ? # This is plain read 
 *0x10004 = 0x00
 *0x10008 = 0x07  & 0b11 # This is write with extra mask
@@ -14,7 +14,8 @@ load_sheet demo_regbank.Sheet_A at 0x40004000 using WORD_OFFSETS as Sheet_A0
 load_sheet demo_regbank.Sheet_A at 0x40005000 using WORD_OFFSETS as Sheet_A1
 load_sheet demo_regbank.Sheet_B at 0x40006000 using WORD_OFFSETS
 
-*demo_regbank.Sheet_A.Register_A = 0x00
+*demo_regbank.Sheet_A0.Register_A = 0x00
+*demo_regbank.Sheet_A1.Register_B = ?
 *demo_regbank.Sheet_B.Register_B.Subfield_B_A = 0x020
 
 *0x40008 [25:20] = 0x10

@@ -315,12 +315,15 @@ class regbank_reader_model_t (QObject):
         else:
             return None;       # Read failed
 
-    def write_address(self, address, value):
+    def write_address(self, address, value, dynamic_mmap=True):
         if __debug__:
             return True
         msg_write = msg_req_t()
         msg_write.handle = id(address)
-        msg_write.req_type = WORD_WRITE_REQ_UNMAPPED
+        if dynamic_mmap:
+            msg_write.req_type = WORD_WRITE_REQ_UNMAPPED
+        else:
+            msg_write.req_type = WORD_WRITE_REQ
         msg_write.addr = address
         msg_write.value = value
         resp = self.client.query_server(msg_write)
@@ -330,37 +333,37 @@ class regbank_reader_model_t (QObject):
         else:
             return False; # Write failed
 
-    def display_read_register(self, register_name, subfields, value, bitfield=None):
-        if bitfield:
-            print("{0}.{1}.{2}")
-        for subfield in subfields:
-            print("{0}.{1}.{2}")
+    def display_read_register(self, regbank_name, sheet_name, register_name, subfield_name, value):
+        print("Reading {0}.{1}.{2} => ".format(regbank_name, sheet_name, register_name))
+        if subfield_name:
+            subfield = self.db[regbank_name][sheet_name].registers[register_name].subfields[subfield_name]
+            print("    * .{0} [{1}:{2}] = {3}".format(subfield.name, subfield.bit_position[-1], 
+                    subfield.bit_position[0], value))
+        else:
+            for (key, subfield) in self.db[regbank_name][sheet_name].registers[register_name].subfields.items():
+                subfield_value = regbank_parser.regbank_get_subfield_value(subfield, value)
+                print("    .{0:<20} {{{1:>2}:{2:>2}}} = {3}".format(subfield.name, subfield.bit_position[-1],
+                        subfield.bit_position[0], subfield_value))
 
-    def read_register(self, regbank_name, sheet_name, register_name, 
-            subfield_name=None, bitfield=None):
+    def read_register(self, regbank_name, sheet_name, register_name, subfield_name):
         try:
             sheet = self.db[regbank_name][sheet_name]
             register = sheet.registers[register_name]
             addr = sheet.base_addr + register.offset_addr * \
                     (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)
             value = self.read_address(addr, dynamic_mmap=False)
-            if subfield_name:
-                bit_pos = register.subfields[subfield_name]
-                start = bit_pos[0]
-                end = bit_pos[-1]
-                bitfield.bitfield_start += start
-                bitfield.bitfield_end   += start
-                bitfield.bitfield_value <<= start
-                if bitfield.bitfield_value:
-                    assert bitfield.start <= end and bitfield.end <= end
-                    value = value & bitfield.bitfield_value
-                subfield = register.subfields[subfield_name]
-                self.display_read_register(register_name, [subfield], value, bitfield)
-            else:
-                if bitfield.bitfield_value:
-                    pass
-                else:
-                    self.display_read_register(register_name, register.subfields, value)
+            return value
+        except:
+            set_trace()
+            pass
+
+    def write_register(self, regbank_name, sheet_name, register_name, subfield_name, value):
+        try:
+            sheet = self.db[regbank_name][sheet_name]
+            register = sheet.registers[register_name]
+            addr = sheet.base_addr + register.offset_addr * \
+                    (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)
+            self.write_address(addr, value, dynamic_mmap=False)
         except:
             set_trace()
             pass
@@ -422,14 +425,18 @@ class regbank_reader_model_t (QObject):
 
                 if re.search("\?$", tib):
                     # Read register specified
-                    self.read_register(regbank_name, sheet_name, register_name,
-                            subfield_name, bitfield)
-
-                elif re.search("\?", tib):
-                    # Read-modify-write register specified
-                    pass
+                    value = self.read_register(regbank_name, sheet_name, register_name, subfield_name)
+                    self.display_read_register(regbank_name, sheet_name, register_name, subfield_name,
+                            value)
+##                elif re.search("\?", tib):
+##                    # Read-modify-write register specified
+##                    value = eval(valmask.replace('?', ''))
+##                    set_trace() # TODO
+##                    pass
                 else :
                     # Write register specified
+                    value = eval(valmask)
+                    self.write_register(regbank_name, sheet_name, register_name, subfield_name, value)
                     pass
             else:
                 # Using address access
@@ -446,28 +453,28 @@ class regbank_reader_model_t (QObject):
                     else:
                         print("* {0} [{1}:{2}]: Read failed ".format(hex(addr),
                                 bitfield.bitfield_end, bitfield.bitfield_start))
-                elif re.search("\?", valmask):
-                    # Read modify write
-                    value = eval(valmask.replace('?', ''))
-                    read_value = self.read_address(addr)
-                    write_value = read_value
-                    if bitfield.bitfield_value:
-                        if value > (value & bitfield.bitfield_mask) :
-                            print ("Warning : Value specified exceeds the"
-                                    " bit field specified")
-                        write_value |= (value & bitfield.bitfield_mask) << \
-                            bitfield.bitfield_rshift
-                    else:
-                        write_value |= value
-
-                    if self.write_address(addr, write_value):
-                        print("* {0} [{1}:{2}] = {3} : Read-modify-write "
-                                    "success ".format(hex(addr), bitfield.bitfield_end,
-                                    bitfield.bitfield_start, hex(write_value)))
-                    else:
-                        print("* {0} [{1}:{2}] = {3} : Read-modify-write "
-                                "failed ".format(hex(addr), bitfield.bitfield_end,
-                                    bitfield.bitfield_start, hex(write_value)))
+##                elif re.search("\?", valmask):
+##                    # Read modify write
+##                    value = eval(valmask.replace('?', ''))
+##                    read_value = self.read_address(addr)
+##                    write_value = read_value
+##                    if bitfield.bitfield_value:
+##                        if value > (value & bitfield.bitfield_mask) :
+##                            print ("Warning : Value specified exceeds the"
+##                                    " bit field specified")
+##                        write_value |= (value & bitfield.bitfield_mask) << \
+##                            bitfield.bitfield_rshift
+##                    else:
+##                        write_value |= value
+##
+##                    if self.write_address(addr, write_value):
+##                        print("* {0} [{1}:{2}] = {3} : Read-modify-write "
+##                                    "success ".format(hex(addr), bitfield.bitfield_end,
+##                                    bitfield.bitfield_start, hex(write_value)))
+##                    else:
+##                        print("* {0} [{1}:{2}] = {3} : Read-modify-write "
+##                                "failed ".format(hex(addr), bitfield.bitfield_end,
+##                                    bitfield.bitfield_start, hex(write_value)))
                 else:
                     # Write address
                     value = eval(valmask)
@@ -530,8 +537,8 @@ class regbank_reader_model_t (QObject):
             if as_sheet==None:
                 as_sheet = sheet_name
 
-            print("Loading regbank sheet {0} from regbank {1} as {2}".format(
-                    sheet_name, regbank_name, as_sheet))
+            print("Loading regbank sheet {0} from regbank {1} as {2} at {3}".format(
+                    sheet_name, regbank_name, as_sheet, hex(base_addr)))
             regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
                     offset_type, as_sheet)
             # MMAP the sheet space

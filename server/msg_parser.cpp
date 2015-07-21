@@ -18,21 +18,30 @@ msg_req_t temp;
 static msg_parser_ctxt_t msg_parser_ctxt;
 static msg_parser_ctxt_t *g_msg_parser_ctxt = &msg_parser_ctxt;
 
-static uint8_t * msg_parser_mmap(int fd, msg_address_t start_addr, 
-        msg_address_t end_addr)
-{
-    
-    uint8_t * rv = (uint8_t *)mmap((void*)(intptr_t)start_addr, 
-            (end_addr-start_addr+1), PROT_READ | PROT_WRITE,
-            MAP_SHARED, fd, (off_t) (start_addr & PAGE_MASK));
-    if (rv == MAP_FAILED) {
+#if PLATFORM == HOST
+    static uint8_t * msg_parser_mmap(int fd, msg_address_t start_addr, 
+            msg_address_t end_addr)
+    {
         return NULL;
-    } else {
-        rv += (uint32_t)(start_addr & ~PAGE_MASK);
-        assert(rv==(uint8_t *)(intptr_t)start_addr, ASSERT_FATAL);
-        return rv;
     }
-}
+#else
+    static uint8_t * msg_parser_mmap(int fd, msg_address_t start_addr, 
+            msg_address_t end_addr)
+    {
+        
+        uint8_t * rv = (uint8_t *)mmap((void*)(intptr_t)start_addr, 
+                (end_addr-start_addr+1), PROT_READ | PROT_WRITE,
+                MAP_SHARED, fd, (off_t) (start_addr & PAGE_MASK));
+        if (rv == MAP_FAILED) {
+            assert(0, ASSERT_FATAL);
+            return NULL;
+        } else {
+            rv += (uint32_t)(start_addr & ~PAGE_MASK);
+            assert(rv==(uint8_t *)(intptr_t)start_addr, ASSERT_FATAL);
+            return rv;
+        }
+    }
+#endif
 
 static uint8_t msg_parser_munmap(msg_address_t start_addr, msg_address_t end_addr)
 {
@@ -59,12 +68,6 @@ void msg_parser_init()
 
 static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
 {
-#if 0
-    g_msg_parser_ctxt->start_addr = start;
-    g_msg_parser_ctxt->end_addr   = end;
-    g_msg_parser_ctxt->parser_state = MSG_PARSER_INITIALIZED_STATE;
-    return true;
-#endif
     g_msg_parser_ctxt->start_addr[g_msg_parser_ctxt->num_mmaps] = start;
     g_msg_parser_ctxt->end_addr[g_msg_parser_ctxt->num_mmaps]   = end;
     msg_parser_mmap(g_msg_parser_ctxt->mem_fd, start, end);
@@ -78,19 +81,21 @@ static bool msg_parser_mmap_space(msg_address_t start, msg_address_t end)
 static bool check_address(msg_address_t addr)
 {
     uint8_t idx;
+    bool ret_val = false;
     for (idx=0; idx < g_msg_parser_ctxt->num_mmaps; idx++) {
         if (g_msg_parser_ctxt->parser_state[idx]==MSG_PARSER_INITIALIZED_STATE) {
             if ((addr >= g_msg_parser_ctxt->start_addr[idx]) && 
                 (addr <= g_msg_parser_ctxt->end_addr[idx])) {
-                return true;
-            } else {
-                return false;
+                ret_val = true;
+                break;
             }
-        } else {
-            return false;
         }
     }
-    return false;
+
+    if (ret_val==false) {
+        printf("check_address failed for %x", addr);
+    }
+    return ret_val;
 }
 
 static void msg_parser_resp(msg_handle_type_t msg_handle,

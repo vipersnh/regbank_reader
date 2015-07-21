@@ -11,7 +11,7 @@ class offsets_enum_t(enumeration.Enum):
     WORD_OFFSETS = 1
 
 
-subfield_t      = StructDict("subfield_t", ["bit_width", "bit_position", "sw_attr", 
+subfield_t      = StructDict("subfield_t", ["name", "bit_width", "bit_position", "sw_attr", 
                                             "hw_attr", "default_val", "description", "value"])
 register_t      = StructDict("register_t", ["offset_addr", "subfields", "value"])
 sheet_t         = StructDict("sheet_t",    ["base_addr","mmap_done", "start_addr", "end_addr", "offset_type", "registers"])
@@ -49,6 +49,7 @@ def regbank_decode_register(rows) :
     for row in rows :
         subfield    = subfield_t()
         subfield_name = row[regbank_info["sub_field_name_col"]].value
+        subfield.name = subfield_name
         subfield.bit_width = int(row[regbank_info["bit_width_col"]].value)
         subfield.bit_position = row[regbank_info["bit_position_col"]].value
         assert 'x' not in subfield.bit_position, "Invalid x in bit_position field"
@@ -77,6 +78,17 @@ def regbank_decode_register(rows) :
         return [None, None]
     else:
         return [register_name, register];
+
+def regbank_get_subfield_value(subfield, value):
+    bit_pos = subfield.bit_position
+    start = bit_pos[0]
+    end   = bit_pos[-1]
+    mask  = ((1<<(end+1))-1) - ((1<<(start))-1)
+    try:
+        return ( value & mask ) >> start
+    except:
+        set_trace()
+        pass
 
 def regbank_load_excel(fname) :
     regbank_name = splitext(basename(fname))[0]

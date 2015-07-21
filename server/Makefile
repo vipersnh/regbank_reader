@@ -14,9 +14,9 @@ X86_M32_TARGET  :=  server.exe
 
 
 
-ARM_M32_CC 		:= 	arm-none-linux-gnueabi-gcc
-ARM_M32_CXX 	:= 	arm-none-linux-gnueabi-g++
-ARM_M32_LINK 	:= 	arm-none-linux-gnueabi-g++
+ARM_M32_CC 		:= 	arm-linux-gnueabi-gcc
+ARM_M32_CXX 	:= 	arm-linux-gnueabi-gcc
+ARM_M32_LINK 	:= 	arm-linux-gnueabi-gcc
 ARM_M32_CFLAGS  :=  
 ARM_M32_CXXFLAGS:= -Wall -ggdb3 -pthread -march=armv7-a -mfloat-abi=softfp
 ARM_M32_INC	    := $(SERVER_INC)
