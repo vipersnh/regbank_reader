@@ -1,28 +1,25 @@
 # Lines Starting with '#' are ignored, ' ' character is ignored if more than one.
 # Lines containing '#' after each tib is treated as a comment
 
+connect("192.168.1.2", "3333", "tcp")
+print(read(0x10000))
+write(0x10004, 0x00)
+write(0x10008, 0x07, [3,0]) 
+write(0x10008, 0x07, [10,3])
 
-connect 192.168.1.2 : 3333 over tcp
-*0x10000 = ? # This is plain read 
-*0x10004 = 0x00
-*0x10008 = 0x07  & 0b11 # This is write with extra mask
-*0x10008 =? 0x07  # This is rmwrite with no mask
-*0x10008 =? 0x07  & 0b11 # This is rmwrite with extra mask
+load_regbank("../regbank_sheet_examples/demo_regbank.xlsx") # Relative to location of tib file 
+set_trace()
+load_sheet(demo_regbank.Sheet_A, 0x40004000, 4, "Sheet_A0")
+load_sheet(demo_regbank.Sheet_A, 0x40005000, 4, "Sheet_A1")
+load_sheet(demo_regbank.Sheet_B, 0x40006000, 4)
+write(demo_regbank.Sheet_A0.Register_A, 0x00)
+read (demo_regbank.Sheet_A1.Register_B)
+write(demo_regbank.Sheet_B.Register_B.Subfield_B_A, 0x020)
 
-load_regbank "../regbank_sheet_examples/demo_regbank.xlsx" # Relative to location of tib file 
-load_sheet demo_regbank.Sheet_A at 0x40004000 using WORD_OFFSETS as Sheet_A0
-load_sheet demo_regbank.Sheet_A at 0x40005000 using WORD_OFFSETS as Sheet_A1
-load_sheet demo_regbank.Sheet_B at 0x40006000 using WORD_OFFSETS
+write(0x40008, 0x10, [25,20])
+read (0x2000, [10,0])
+write(demo_regbank.Sheet_B.Register_B, 0x020, [10,1])
 
-*demo_regbank.Sheet_A0.Register_A = 0x00
-*demo_regbank.Sheet_A1.Register_B = ?
-*demo_regbank.Sheet_B.Register_B.Subfield_B_A = 0x020
-
-*0x40008 [25:20] = 0x10
-* 0x2000 [10:0] = ?
-*demo_regbank.Sheet_B.Register_B[31:10] = 0x020
-
-
-unload_sheet demo_regbank.Sheet_A0
-unload_sheet demo_regbank.Sheet_A1
-unload_regbank demo_regbank
+unload_sheet(demo_regbank.Sheet_A0)
+unload_sheet(demo_regbank.Sheet_A1)
+unload_regbank(demo_regbank)

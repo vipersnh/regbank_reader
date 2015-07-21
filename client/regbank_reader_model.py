@@ -14,6 +14,9 @@ target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
 bitfield_t   = StructDict("bitfield_t", ["bitfield_value", "bitfield_mask", 
                                          "bitfield_rshift", "bitfield_end",
                                          "bitfield_start"])
+
+model = ""
+
 #class regbank_reader_model_t(QObject):
 #    signal_targets_info  = pyqtSignal(list)
 #    signal_target_connection_status = pyqtSignal(str)
@@ -217,17 +220,14 @@ class regbank_reader_model_t (QObject):
     target_search_thread = None
     keep_alive_thread = None
 
-    def __init__(self, tib_file=None, server_udp_port=2222):
+    def __init__(self, tib_file, cmd_line=False, server_udp_port=2222):
         super(regbank_reader_model_t, self).__init__()
         self.db = regbank_parser.db # Reference to actual database
         self.client = client_t(server_udp_port)
         self.targets_list = []
         self.target_connected = False
-        self.cmd_line = False
-        if tib_file:
-            self.cmd_line = True
-            self.parse_tib_file(tib_file)
-            exit(0)
+        self.cmd_line = cmd_line
+        self.tib_file = tib_file
 
     def initialize(self):
         self.target_search_thread = QThread()
@@ -311,6 +311,7 @@ class regbank_reader_model_t (QObject):
         resp = self.client.query_server(msg_read)
         assert(resp.handle==msg_read.handle)
         if resp.status==STATUS_OK:
+            assert resp.value != None, "Invalid state"
             return resp.value; # Read success
         else:
             return None;       # Read failed
@@ -368,218 +369,276 @@ class regbank_reader_model_t (QObject):
             set_trace()
             pass
 
-    def parse_tib(self, tib, tib_file_path):
-        if self.cmd_line and not self.target_connected:
-            if re.search(" *connect", tib):
-                # Connect to target specified
-                tib = tib.replace("connect", '')
-                [ip_port, protocol] = tib.split("over")
-                [ip, port] = ip_port.replace(' ', '').split(':')
-                target = target_t(ip, port, protocol, 0)
-                self.connect_to_target(target)
-                return
-            else:
-                print("\"connect\" command not found when using command line execution")
-                exit(0)
-        
-        bitfield = bitfield_t()
-        bitfield.bitfield_value = 0
-        bitfield.bitfield_mask   = 0xFFFFFFFF
-        bitfield.bitfield_rshift = 0
-        bitfield.bitfield_end    = 31
-        bitfield.bitfield_start  = 0
-        if re.search("\[.*\]", tib):
-            bitfield_str = re.split(" *\]", re.split(" *\[ *", tib)[1])[0]
-            if re.search(':', bitfield_str):
-                [end, start] = re.split(' *: *', bitfield_str)
-                end = int(end)
-                start = int(start)
-            else:
-                start = end = int(bitfield_str)
-            bitfield.bitfield_value = ((1<<(end+1))) - ((1<<(start)))
-            bitfield.bitfield_rshift = start
-            bitfield.bitfield_mask = bitfield.bitfield_value >> bitfield.bitfield_rshift
-            bitfield.bitfield_end   = end
-            bitfield.bitfield_start = start
-            tib = "".join(re.split("\[.*\]", tib))
-            print(bin(bitfield.bitfield_value))
+def get_bitfield_spec(start, end):
+    bitfield = bitfield_t()
+    bitfield.value = 0
+    bitfield.mask   = 0xFFFFFFFF
+    bitfield.value = ((1<<(end+1))) - ((1<<(start)))
+    bitfield.rshift = start
+    bitfield.mask = bitfield.value >> bitfield.rshift
+    bitfield.end   = end
+    bitfield.start = start
+    
+
+def parse_tib(tib, tib_file):
+    global model
+    if model.cmd_line and not model.target_connected:
+        if re.search(" *connect", tib):
+            # Connect to target specified
+            tib = tib.replace("connect", '')
+            [ip_port, protocol] = tib.split("over")
+            [ip, port] = ip_port.replace(' ', '').split(':')
+            target = target_t(ip, port, protocol, 0)
+            model.connect_to_target(target)
+            return
+        else:
+            print("\"connect\" command not found when using command line execution")
+            exit(0)
+    
+    if hasattr(parse_tib, "cur_tib_idx"):
+        parse_tib.cur_tib_idx += 1
+    else:
+        parse_tib.cur_tib_idx  = 0 
+    
+    print("Executing tib {0}".format(parse_tib.cur_tib_idx))
+    bitfield = get_bitfield_spec(0, 31)
+    if re.search("\[.*\]", tib):
+        bitfield_str = re.split(" *\]", re.split(" *\[ *", tib)[1])[0]
+        if re.search(':', bitfield_str):
+            [end, start] = re.split(' *: *', bitfield_str)
+            end = int(end)
+            start = int(start)
+        else:
+            start = end = int(bitfield_str)
+        bitfield = get_bitfield_spec(start, end)
+        tib = "".join(re.split("\[.*\]", tib))
+        print(bin(bitfield.bitfield_value))
 
 
-        if re.search(" *^\*", tib):
-            # Read or write access tib
-            tib = tib[1:]
+    if re.search(" *^\*", tib):
+        # Read or write access tib
+        tib = tib[1:]
 
 
-            if '.' in tib:
-                # Using named access
-                [reg_str, valmask] = re.split(" *= *", tib)
-                regbank_name = sheet_name = register_name = subfield_name = None
-                if reg_str.count('.')==3:
-                    [regbank_name, sheet_name, register_name, subfield_name] = \
-                            reg_str.split('.')
-                elif reg_str.count('.')==2:
-                    [regbank_name, sheet_name, register_name] = \
-                            reg_str.split('.')
-                elif reg_str.count('.')<=1:
-                    assert 0, "Invalid register read command specified"
+        if '.' in tib:
+            # Using named access
+            [reg_str, valmask] = re.split(" *= *", tib)
+            regbank_name = sheet_name = register_name = subfield_name = None
+            if reg_str.count('.')==3:
+                [regbank_name, sheet_name, register_name, subfield_name] = \
+                        reg_str.split('.')
+            elif reg_str.count('.')==2:
+                [regbank_name, sheet_name, register_name] = \
+                        reg_str.split('.')
+            elif reg_str.count('.')<=1:
+                assert 0, "Invalid register read command specified"
 
-                if re.search("\?$", tib):
-                    # Read register specified
-                    value = self.read_register(regbank_name, sheet_name, register_name, subfield_name)
-                    self.display_read_register(regbank_name, sheet_name, register_name, subfield_name,
-                            value)
-##                elif re.search("\?", tib):
-##                    # Read-modify-write register specified
-##                    value = eval(valmask.replace('?', ''))
-##                    set_trace() # TODO
-##                    pass
-                else :
-                    # Write register specified
-                    value = eval(valmask)
-                    self.write_register(regbank_name, sheet_name, register_name, subfield_name, value)
+            if re.search("\?$", tib):
+                # Read register specified
+                value = model.read_register(regbank_name, sheet_name, register_name, subfield_name)
+                if value==None:
+                    # TODO, patch this
+                    set_trace()
                     pass
-            else:
-                # Using address access
-                [addr, valmask] = re.split(" *= *", tib)
-                addr = int(addr, 0)
-                if re.search("\?$", tib):
-                    # Read address
-                    value = self.read_address(addr)
-                    if value != None:
-                        print("* {0} [{1}:{2}] = {3} ".format(hex(addr),
-                                bitfield.bitfield_end, bitfield.bitfield_start,
-                                hex((value & bitfield.bitfield_mask ) >>
-                                bitfield.bitfield_rshift)))
-                    else:
-                        print("* {0} [{1}:{2}]: Read failed ".format(hex(addr),
-                                bitfield.bitfield_end, bitfield.bitfield_start))
-##                elif re.search("\?", valmask):
-##                    # Read modify write
-##                    value = eval(valmask.replace('?', ''))
-##                    read_value = self.read_address(addr)
-##                    write_value = read_value
-##                    if bitfield.bitfield_value:
-##                        if value > (value & bitfield.bitfield_mask) :
-##                            print ("Warning : Value specified exceeds the"
-##                                    " bit field specified")
-##                        write_value |= (value & bitfield.bitfield_mask) << \
-##                            bitfield.bitfield_rshift
-##                    else:
-##                        write_value |= value
-##
-##                    if self.write_address(addr, write_value):
-##                        print("* {0} [{1}:{2}] = {3} : Read-modify-write "
-##                                    "success ".format(hex(addr), bitfield.bitfield_end,
-##                                    bitfield.bitfield_start, hex(write_value)))
-##                    else:
-##                        print("* {0} [{1}:{2}] = {3} : Read-modify-write "
-##                                "failed ".format(hex(addr), bitfield.bitfield_end,
-##                                    bitfield.bitfield_start, hex(write_value)))
-                else:
-                    # Write address
-                    value = eval(valmask)
-                    write_value = 0
-                    if bitfield.bitfield_value:
-                        if value > (value & bitfield.bitfield_mask) :
-                            print ("Warning : Value specified exceeds the"
-                                    " bit field specified")
-                        write_value |= (value & bitfield.bitfield_mask) << bitfield.bitfield_rshift
-                    else:
-                        write_value |= value
-                    if self.write_address(addr, write_value):
-                        print("* {0} [{1}:{2}] = {3} : Write success ".format(hex(addr), 
-                                bitfield.bitfield_end, bitfield.bitfield_start, hex(write_value)))
-                    else:
-                        print("* {0} [{1}:{2}] = {3} : Write failed ".format(hex(addr), 
-                                bitfield.bitfield_end, bitfield.bitfield_start, hex(write_value)))
-            return
-
-        if re.search(" *^load_regbank", tib):
-            # Load the regbank into database
-            [_, regbank_file] = re.split(" +", tib)
-            if re.search("^.", regbank_file):
-                regbank_file = tib_file_path + "/" + regbank_file.replace("\"",'')
-            print("Loading regbank {0}".format(regbank_file))
-            regbank_parser.regbank_load_excel(regbank_file)
-            return
-        
-        if re.search(" *^unload_regbank", tib):
-            # Unload the regbank from database
-            [ _ , regbank_name] = re.split(" +", tib)
-            print("Unloading regbank {0}".format(regbank_name))
-            regbank_parser.regbank_unload(regbank_name)
-            return
-
-        if re.search("^load_sheet", tib):
-            # Load the regbank sheet into database 
-            regbank_sheet = base_addr = offset_type = as_sheet = None
-            if re.search(" +using +", tib) and re.search(" +as +", tib):
-                [ _, regbank_sheet, _, base_addr, _, offset_type, _, as_sheet ] = \
-                        re.split(" +", tib)
-            elif re.search(" +using +", tib):
-                [ _, regbank_sheet, _, base_addr, _, offset_type] = \
-                        re.split(" +", tib)
+                model.display_read_register(regbank_name, sheet_name, register_name, subfield_name,
+                        value)
+            elif re.search("\?", tib):
+                # Read-modify-write register specified
+                value = eval(valmask.replace('?', ''))
+                set_trace() # TODO
+                pass
             else :
-                [ _, regbank_sheet, _, base_addr,] = \
-                        re.split(" +", tib)
-            if offset_type==None:
-                offset_type = offsets_enum_t.BYTE_OFFSETS
-            elif offset_type=="BYTE_OFFSETS":
-                offset_type = offsets_enum_t.BYTE_OFFSETS
-            elif offset_type=="WORD_OFFSETS":
-                offset_type = offsets_enum_t.WORD_OFFSETS
+                # Write register specified
+                value = eval(valmask)
+                model.write_register(regbank_name, sheet_name, register_name, subfield_name, value)
+                pass
+        else:
+            # Using address access
+            [addr, valmask] = re.split(" *= *", tib)
+            addr = int(addr, 0)
+            if re.search("\?$", tib):
+                # Read address
+                value = self.read_address(addr)
+                if value != None:
+                    print("* {0} [{1}:{2}] = {3} ".format(hex(addr),
+                            bitfield.bitfield_end, bitfield.bitfield_start,
+                            hex((value & bitfield.bitfield_mask ) >>
+                            bitfield.bitfield_rshift)))
+                else:
+                    print("* {0} [{1}:{2}]: Read failed ".format(hex(addr),
+                            bitfield.bitfield_end, bitfield.bitfield_start))
+            elif re.search("\?", valmask):
+                # Read modify write
+                value = eval(valmask.replace('?', ''))
+                read_value = self.read_address(addr)
+                write_value = read_value
+                if bitfield.bitfield_value:
+                    if value > (value & bitfield.bitfield_mask) :
+                        print ("Warning : Value specified exceeds the"
+                                " bit field specified")
+                    write_value |= (value & bitfield.bitfield_mask) << \
+                        bitfield.bitfield_rshift
+                else:
+                    write_value |= value
+
+                if self.write_address(addr, write_value):
+                    print("* {0} [{1}:{2}] = {3} : Read-modify-write "
+                                "success ".format(hex(addr), bitfield.bitfield_end,
+                                bitfield.bitfield_start, hex(write_value)))
+                else:
+                    print("* {0} [{1}:{2}] = {3} : Read-modify-write "
+                            "failed ".format(hex(addr), bitfield.bitfield_end,
+                                bitfield.bitfield_start, hex(write_value)))
             else:
-                assert 0, "Unknown offset type specified"
-            
-            base_addr = int(base_addr, 0)
-            [regbank_name, sheet_name] = regbank_sheet.split('.')
+                # Write address
+                value = eval(valmask)
+                write_value = 0
+                if bitfield.bitfield_value:
+                    if value > (value & bitfield.bitfield_mask) :
+                        print ("Warning : Value specified exceeds the"
+                                " bit field specified")
+                    write_value |= (value & bitfield.bitfield_mask) << bitfield.bitfield_rshift
+                else:
+                    write_value |= value
+                if self.write_address(addr, write_value):
+                    print("* {0} [{1}:{2}] = {3} : Write success ".format(hex(addr), 
+                            bitfield.bitfield_end, bitfield.bitfield_start, hex(write_value)))
+                else:
+                    print("* {0} [{1}:{2}] = {3} : Write failed ".format(hex(addr), 
+                            bitfield.bitfield_end, bitfield.bitfield_start, hex(write_value)))
+        return
 
-            if as_sheet==None:
-                as_sheet = sheet_name
+    if re.search(" *^load_regbank", tib):
+        # Load the regbank into database
+        [_, regbank_file] = re.split(" +", tib)
+        if re.search("^.", regbank_file):
+            regbank_file = tib_file_path + "/" + regbank_file.replace("\"",'')
+        print("Loading regbank {0}".format(regbank_file))
+        regbank_parser.regbank_load_excel(regbank_file)
+        return
+    
+    if re.search(" *^unload_regbank", tib):
+        # Unload the regbank from database
+        [ _ , regbank_name] = re.split(" +", tib)
+        print("Unloading regbank {0}".format(regbank_name))
+        regbank_parser.regbank_unload(regbank_name)
+        return
 
-            print("Loading regbank sheet {0} from regbank {1} as {2} at {3}".format(
-                    sheet_name, regbank_name, as_sheet, hex(base_addr)))
-            regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
-                    offset_type, as_sheet)
-            # MMAP the sheet space
-            assert self.target_connected, "Target must be connected to load regbank sheets"
-            sheet = self.db[regbank_name][as_sheet]
-            success = self.create_mem_map(sheet.start_addr, sheet.end_addr)
-            if not success:
-                assert 0, "MMAP failed on server side"
-            return
-
-        if re.search(" *^unload_sheet", tib):
-            # Unload the regbank from database
-            [ _ , arg_str] = re.split(" +", tib)
-            assert arg_str.count('.')==1, "Unload format unknown"
-            [regbank_name, sheet_name] = arg_str.split('.')
-            print("Unloading sheet {0} from {1}".format(sheet_name, regbank_name))
-            regbank_parser.regbank_unload_sheet(regbank_name, sheet_name)
-            return
-
-
-    def parse_tib_file(self, tib_file):
-        tib_file_path = dirname(tib_file)
-        if not self.target_connected and not self.cmd_line:
-            assert 0, "Target must be connected before parsing tib file"
+    if re.search("^load_sheet", tib):
+        # Load the regbank sheet into database 
+        regbank_sheet = base_addr = offset_type = as_sheet = None
+        if re.search(" +using +", tib) and re.search(" +as +", tib):
+            [ _, regbank_sheet, _, base_addr, _, offset_type, _, as_sheet ] = \
+                    re.split(" +", tib)
+        elif re.search(" +using +", tib):
+            [ _, regbank_sheet, _, base_addr, _, offset_type] = \
+                    re.split(" +", tib)
+        else :
+            [ _, regbank_sheet, _, base_addr,] = \
+                    re.split(" +", tib)
+        if offset_type==None:
+            offset_type = offsets_enum_t.BYTE_OFFSETS
+        elif offset_type=="BYTE_OFFSETS":
+            offset_type = offsets_enum_t.BYTE_OFFSETS
+        elif offset_type=="WORD_OFFSETS":
+            offset_type = offsets_enum_t.WORD_OFFSETS
+        else:
+            assert 0, "Unknown offset type specified"
         
-        with open(tib_file, "r") as f :
-            for tib in f:
-                tib = tib.strip()
-                if tib=='':
-                    # Ignore blank line
-                    continue
-                if re.search("^\#", tib):
-                    # Ignore tib as it is a comment
-                    continue
+        base_addr = int(base_addr, 0)
+        [regbank_name, sheet_name] = regbank_sheet.split('.')
 
-                if '#' in tib:
-                    # Trim contents after '#' in the tib
-                    tib = tib[:tib.find('#')].strip()
-                
-                self.parse_tib(tib, tib_file_path)
-        self.signal_tib_file_loaded.emit(tib_file)        
+        if as_sheet==None:
+            as_sheet = sheet_name
+
+        print("Loading regbank sheet {0} from regbank {1} as {2} at {3}".format(
+                sheet_name, regbank_name, as_sheet, hex(base_addr)))
+        regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
+                offset_type, as_sheet)
+        # MMAP the sheet space
+        assert self.target_connected, "Target must be connected to load regbank sheets"
+        sheet = self.db[regbank_name][as_sheet]
+        success = self.create_mem_map(sheet.start_addr, sheet.end_addr)
+        if not success:
+            assert 0, "MMAP failed on server side"
+        return
+
+    if re.search(" *^unload_sheet", tib):
+        # Unload the regbank from database
+        [ _ , arg_str] = re.split(" +", tib)
+        assert arg_str.count('.')==1, "Unload format unknown"
+        [regbank_name, sheet_name] = arg_str.split('.')
+        print("Unloading sheet {0} from {1}".format(sheet_name, regbank_name))
+        regbank_parser.regbank_unload_sheet(regbank_name, sheet_name)
+        return
+
+
+def parse_tib_file(tib_file):
+    global model
+    tib_file_path = dirname(tib_file)
+    if not model.target_connected and not model.cmd_line:
+        assert 0, "Target must be connected before parsing tib file"
+    exec(open(tib_file, "r").read(), locals(), globals())
+#        for tib in f:
+#            tib = tib.strip()
+#            if tib=='':
+#                # Ignore blank line
+#                continue
+#            if re.search("^\#", tib):
+#                # Ignore tib as it is a comment
+#                continue
+#
+#            if '#' in tib:
+#                # Trim contents after '#' in the tib
+#                tib = tib[:tib.find('#')].strip()
+#            
+#            parse_tib(tib, tib_file_path)
+    model.signal_tib_file_loaded.emit(tib_file)        
+
+def connect(ip_addr, port, prot):
+    target = target_t(ip_addr, port, prot, 0)
+    model.connect_to_target(target)
+
+
+def load_regbank(regbank_file):
+    global model
+    if re.search("^.", regbank_file):
+        regbank_file = dirname(model.tib_file) + "/" + regbank_file
+    print("Loading regbank {0}".format(regbank_file))
+    regbank_parser.regbank_load_excel(regbank_file)
+
+def unload_regbank(name):
+    pass
+
+def load_sheet(regbank_name, sheet_name, base_addr, 
+        offset_size, as_sheet_name=None):
+    offset_type = offsets_enum_t.BYTE_OFFSETS if offset_size==1 else \
+        offsets_enum_t.WORD_OFFSETS
+    regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
+        offset_type, as_sheet)
+
+def unload_sheet(name):
+    pass
+
+def read(read_from, bitmask=None):
+    if type(read_from)==int:
+        addr = read_from
+        value = model.read_address(read_from)
+        if bitmask:
+            start = bitmask[-1]
+            end = bitmask[0]
+            bitfield = get_bitfield_spec(start, end)
+            return (value & bitfield.value) >> bitfield.rshift
+        else:
+            return value
+    else:
+        pass
+
+def write(write_to, value, bitmask=None):
+    pass
+
+def initialize():
+    pass
 
 if __name__ == "__main__":
     import argparse
@@ -587,7 +646,11 @@ if __name__ == "__main__":
     parser.add_argument('fnames', nargs="+")
     parse_res = parser.parse_args()
     fnames = parse_res.fnames
-    model = regbank_reader_model_t()
-    model.target_connected = True
-    model.parse_tib_file(fnames[0])
+    if fnames[0]:
+        cmd_line = True
+    else:
+        cmd_line = False
 
+    model = regbank_reader_model_t(fnames[0], cmd_line)
+    if cmd_line:
+        parse_tib_file(fnames[0])

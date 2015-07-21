@@ -94,7 +94,9 @@ def regbank_load_excel(fname) :
     regbank_name = splitext(basename(fname))[0]
     regbank_files[regbank_name] = fname
     db[regbank_name] = OrderedDict()
-
+    for sheet_name in xlrd.open_workbook(fname).sheet_names():
+        db[regbank_name][sheet_name] = None
+        regbank_make_global(regbank_name, sheet_name)
 def regbank_unload(regbank_name):
     if regbank_name in db.keys():
         db.pop(regbank_name)
@@ -107,8 +109,26 @@ def regbank_get_sheetnames(fname):
     # TODO for GUI
     pass
 
+def regbank_make_global(regbank_name, sheet_name):
+    regbank = StructDict("regbank")
+    regbank.__name__ = regbank_name
+    sheet = StructDict("regbank_sheet")
+    sheet.__name__ = sheet_name
+    if db[regbank_name][sheet_name]:
+        for (register_name, cur_register) in db[regbank_name][sheet_name].registers.items():
+            register = StructDict("regbank_register") 
+            register.__name__ = register_name
+            for (subfield_name, subfield) in register.subfields:
+                setattr(register, subfield_name, subfield)
+            setattr(sheet, register_name, register)
+    setattr(regbank, sheet_name, sheet)
+    globals()[regbank_name] = regbank
+    set_trace()
+    
+            
+    
 
-def  regbank_load_sheet(regbank_name, sheet_name, 
+def regbank_load_sheet(regbank_name, sheet_name, 
         base_addr, offset_type=offsets_enum_t.BYTE_OFFSETS, as_sheet_name=None):
     assert regbank_name in regbank_files.keys(), \
             "Regbank file must be loaded before loading sheets"
@@ -160,6 +180,7 @@ def  regbank_load_sheet(regbank_name, sheet_name,
     db[regbank_name][sheet_name].end_addr = \
             db[regbank_name][sheet_name].registers[last_register_name].offset_addr * \
             (1 if offset_type==offsets_enum_t.BYTE_OFFSETS else 4) + base_addr
+    regbank_make_global(regbank_name, sheet_name)
     return [regbank_name, sheet_name]
 
 def regbank_unload_sheet(regbank_name, sheet_name):
