@@ -2,18 +2,18 @@
 # Lines containing '#' after each tib is treated as a comment
 
 connect("192.168.1.2", "3333", "tcp")
-print(read(0x10000))
+print(hex(read(0x10000, [9,0])))
 write(0x10004, 0x00)
 write(0x10008, 0x07, [3,0]) 
 write(0x10008, 0x07, [10,3])
 
 load_regbank("../regbank_sheet_examples/demo_regbank.xlsx") # Relative to location of tib file 
-set_trace()
 load_sheet(demo_regbank.Sheet_A, 0x40004000, 4, "Sheet_A0")
 load_sheet(demo_regbank.Sheet_A, 0x40005000, 4, "Sheet_A1")
 load_sheet(demo_regbank.Sheet_B, 0x40006000, 4)
 write(demo_regbank.Sheet_A0.Register_A, 0x00)
-read (demo_regbank.Sheet_A1.Register_B)
+a = read (demo_regbank.Sheet_A1.Register_B, [9, 0])
+print(hex(a))
 write(demo_regbank.Sheet_B.Register_B.Subfield_B_A, 0x020)
 
 write(0x40008, 0x10, [25,20])

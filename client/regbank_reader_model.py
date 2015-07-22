@@ -8,12 +8,13 @@ from os.path import dirname
 from sys import exit
 from StructDict import StructDict
 import re
+import types
 
 target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
                                        "max_msg_len"])
-bitfield_t   = StructDict("bitfield_t", ["bitfield_value", "bitfield_mask", 
-                                         "bitfield_rshift", "bitfield_end",
-                                         "bitfield_start"])
+bitfield_t   = StructDict("bitfield_t", ["value", "mask", 
+                                         "rshift", "end",
+                                         "start"])
 
 model = ""
 
@@ -352,32 +353,42 @@ class regbank_reader_model_t (QObject):
             register = sheet.registers[register_name]
             addr = sheet.base_addr + register.offset_addr * \
                     (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)
-            value = self.read_address(addr, dynamic_mmap=False)
-            return value
+            read_value = self.read_address(addr, dynamic_mmap=False)
+            if subfield_name:
+                subfield = register.subfields[subfield_name]
+                bitfield = get_bitfield_spec(subfield.bit_position[0], subfield.bit_position[-1])
+                read_value = (read_value & bitfield.mask) >> bitfield.rshift
+            return read_value
         except:
             set_trace()
             pass
 
-    def write_register(self, regbank_name, sheet_name, register_name, subfield_name, value):
+    def write_register(self, regbank_name, sheet_name, register_name, subfield_name, write_value):
         try:
             sheet = self.db[regbank_name][sheet_name]
             register = sheet.registers[register_name]
             addr = sheet.base_addr + register.offset_addr * \
                     (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)
-            self.write_address(addr, value, dynamic_mmap=False)
+            if subfield_name:
+                subfield = register.subfields[subfield_name]
+                bitfield = get_bitfield_spec(subfield.bit_position[0], subfield.bit_position[-1])
+                read_value = model.read_register(regbank_name, sheet_name, register_name, subfield_name)
+                read_value &= bitfield.mask
+                assert (write_value <= bitfield.value), "Number given is larger than bitfield specification"
+                write_value = read_value | (write_value << bitfield.rshift)
+            self.write_address(addr, write_value, dynamic_mmap=False)
         except:
             set_trace()
             pass
 
-def get_bitfield_spec(start, end):
+def get_bitfield_spec(start=0, end=31):
     bitfield = bitfield_t()
-    bitfield.value = 0
-    bitfield.mask   = 0xFFFFFFFF
-    bitfield.value = ((1<<(end+1))) - ((1<<(start)))
+    bitfield.mask = ((1<<(end+1))) - ((1<<(start)))
     bitfield.rshift = start
-    bitfield.mask = bitfield.value >> bitfield.rshift
+    bitfield.value = bitfield.mask >> bitfield.rshift
     bitfield.end   = end
     bitfield.start = start
+    return bitfield
     
 
 def parse_tib(tib, tib_file):
@@ -412,7 +423,7 @@ def parse_tib(tib, tib_file):
             start = end = int(bitfield_str)
         bitfield = get_bitfield_spec(start, end)
         tib = "".join(re.split("\[.*\]", tib))
-        print(bin(bitfield.bitfield_value))
+        print(bin(bitfield.mask))
 
 
     if re.search(" *^\*", tib):
@@ -578,64 +589,32 @@ def parse_tib_file(tib_file):
     tib_file_path = dirname(tib_file)
     if not model.target_connected and not model.cmd_line:
         assert 0, "Target must be connected before parsing tib file"
-    exec(open(tib_file, "r").read(), locals(), globals())
-#        for tib in f:
-#            tib = tib.strip()
-#            if tib=='':
-#                # Ignore blank line
-#                continue
-#            if re.search("^\#", tib):
-#                # Ignore tib as it is a comment
-#                continue
-#
-#            if '#' in tib:
-#                # Trim contents after '#' in the tib
-#                tib = tib[:tib.find('#')].strip()
-#            
-#            parse_tib(tib, tib_file_path)
+#    for tib in f:
+#        eval(tib, globals(), locals())
+#    exec(open(tib_file, "r").read(), globals(), locals())
+    global_env = dict()
+    for (key, value) in globals().items():
+        if type(value)==types.FunctionType:
+            global_env[key] = value
+    with open(tib_file, "r") as f:
+        for tib in f:
+            tib = tib.strip()
+            if tib=='':
+                # Ignore blank line
+                continue
+            if re.search("^\#", tib):
+                # Ignore tib as it is a comment
+                continue
+
+            if '#' in tib:
+                # Trim contents after '#' in the tib
+                tib = tib[:tib.find('#')].strip()
+
+            for (key, value) in regbank_parser.db_dict.items():
+                if key not in global_env.keys():
+                    global_env[key] = value
+            exec(tib, global_env)
     model.signal_tib_file_loaded.emit(tib_file)        
-
-def connect(ip_addr, port, prot):
-    target = target_t(ip_addr, port, prot, 0)
-    model.connect_to_target(target)
-
-
-def load_regbank(regbank_file):
-    global model
-    if re.search("^.", regbank_file):
-        regbank_file = dirname(model.tib_file) + "/" + regbank_file
-    print("Loading regbank {0}".format(regbank_file))
-    regbank_parser.regbank_load_excel(regbank_file)
-
-def unload_regbank(name):
-    pass
-
-def load_sheet(regbank_name, sheet_name, base_addr, 
-        offset_size, as_sheet_name=None):
-    offset_type = offsets_enum_t.BYTE_OFFSETS if offset_size==1 else \
-        offsets_enum_t.WORD_OFFSETS
-    regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
-        offset_type, as_sheet)
-
-def unload_sheet(name):
-    pass
-
-def read(read_from, bitmask=None):
-    if type(read_from)==int:
-        addr = read_from
-        value = model.read_address(read_from)
-        if bitmask:
-            start = bitmask[-1]
-            end = bitmask[0]
-            bitfield = get_bitfield_spec(start, end)
-            return (value & bitfield.value) >> bitfield.rshift
-        else:
-            return value
-    else:
-        pass
-
-def write(write_to, value, bitmask=None):
-    pass
 
 def initialize():
     pass
@@ -650,7 +629,7 @@ if __name__ == "__main__":
         cmd_line = True
     else:
         cmd_line = False
-
     model = regbank_reader_model_t(fnames[0], cmd_line)
+    from script_api import *
     if cmd_line:
         parse_tib_file(fnames[0])

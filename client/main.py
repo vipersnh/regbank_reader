@@ -373,6 +373,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('tib_file', nargs="?")
+    parser.add_argument('c', nargs="?")
     parse_res = parser.parse_args()
     pyqtRemoveInputHook()
     app = QApplication(sys.argv)

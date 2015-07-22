@@ -18,6 +18,7 @@ sheet_t         = StructDict("sheet_t",    ["base_addr","mmap_done", "start_addr
 ## Register Access from  db
 #  db["regbank"]["sheet"]["register"] = 
 db              = OrderedDict()
+db_dict         = dict()
 
 
 ## Columns information
@@ -62,7 +63,7 @@ def regbank_decode_register(rows) :
         subfield.bit_position = list(range(start, end+1))
         subfield.sw_attr = sw_attr
         subfield.hw_attr = hw_attr
-        subfield.default_val = row[regbank_info["default_value_col"]].value
+        subfield.default_val = int(row[regbank_info["default_value_col"]].value)
         subfield.description = description = row[regbank_info["description_col"]].value
         if re.search(regbank_info["reserved_keyword"], subfield_name, re.IGNORECASE):
             subfield_name = regbank_info["reserved_keyword"] + str(reserved_idx)
@@ -96,7 +97,8 @@ def regbank_load_excel(fname) :
     db[regbank_name] = OrderedDict()
     for sheet_name in xlrd.open_workbook(fname).sheet_names():
         db[regbank_name][sheet_name] = None
-        regbank_make_global(regbank_name, sheet_name)
+        regbank_make_struct(regbank_name, sheet_name)
+
 def regbank_unload(regbank_name):
     if regbank_name in db.keys():
         db.pop(regbank_name)
@@ -109,30 +111,44 @@ def regbank_get_sheetnames(fname):
     # TODO for GUI
     pass
 
-def regbank_make_global(regbank_name, sheet_name):
-    regbank = StructDict("regbank")
-    regbank.__name__ = regbank_name
+def regbank_make_struct(regbank_name, sheet_name):
+    try:
+        regbank = db_dict[regbank_name]
+    except:
+        regbank = StructDict("regbank")
+        setattr(regbank, "__regbank_name__", regbank_name)
     sheet = StructDict("regbank_sheet")
-    sheet.__name__ = sheet_name
+    setattr(sheet, "__sheet_name__", sheet_name)
+    setattr(sheet, "__regbank_name__", regbank_name)
     if db[regbank_name][sheet_name]:
         for (register_name, cur_register) in db[regbank_name][sheet_name].registers.items():
             register = StructDict("regbank_register") 
-            register.__name__ = register_name
-            for (subfield_name, subfield) in register.subfields:
+
+            setattr(register, "__register_name__", register_name)
+            setattr(register, "__sheet_name__", sheet_name)
+            setattr(register, "__regbank_name__", regbank_name)
+            for (subfield_name, cur_subfield) in cur_register.subfields.items():
+                subfield = StructDict("regbank_subfield")
+                setattr(subfield, "__subfield_name__", subfield_name)
+                setattr(subfield, "__register_name__", register_name)
+                setattr(subfield, "__sheet_name__", sheet_name)
+                setattr(subfield, "__regbank_name__", regbank_name)
+                for field in cur_subfield.__field_names__:
+                    setattr(subfield, field, getattr(cur_subfield, field))
                 setattr(register, subfield_name, subfield)
             setattr(sheet, register_name, register)
     setattr(regbank, sheet_name, sheet)
-    globals()[regbank_name] = regbank
-    set_trace()
-    
-            
-    
+    db_dict[regbank_name] = regbank
 
 def regbank_load_sheet(regbank_name, sheet_name, 
         base_addr, offset_type=offsets_enum_t.BYTE_OFFSETS, as_sheet_name=None):
     assert regbank_name in regbank_files.keys(), \
             "Regbank file must be loaded before loading sheets"
-    workbook = xlrd.open_workbook(regbank_files[regbank_name])
+    try:
+        workbook = xlrd.open_workbook(regbank_files[regbank_name])
+    except:
+        set_trace()
+        pass
     assert sheet_name in workbook.sheet_names(), \
             "Loaded regbank doesnt contain sheet specified"
     xl_sheet = workbook.sheet_by_name(sheet_name)
@@ -180,7 +196,7 @@ def regbank_load_sheet(regbank_name, sheet_name,
     db[regbank_name][sheet_name].end_addr = \
             db[regbank_name][sheet_name].registers[last_register_name].offset_addr * \
             (1 if offset_type==offsets_enum_t.BYTE_OFFSETS else 4) + base_addr
-    regbank_make_global(regbank_name, sheet_name)
+    regbank_make_struct(regbank_name, sheet_name)
     return [regbank_name, sheet_name]
 
 def regbank_unload_sheet(regbank_name, sheet_name):

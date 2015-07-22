@@ -29,12 +29,15 @@ class StructDict_base(object):
                     raise Exception("Attribute not among class initialization attributes")
             else:
                 self.__dict_db__[attr] = value
+                self.__added_fields__.append(attr)
+                set_trace()
         else:
             super(StructDict, self).__setattr__(attr, value)
  
 
 def StructDict(type_name, field_names=list()):
     base_type = type(type_name, (StructDict_base,), {})
+    base_type.__added_fields__ = list()
     base_type.__dict_db__   = dict()
     base_type.__type_name__ = type_name
     base_type.__field_names__ = field_names
