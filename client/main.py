@@ -2,12 +2,13 @@ import sys
 import re
 from hashlib import md5
 from os.path import basename, splitext
-from PyQt4.QtCore import pyqtRemoveInputHook, QThread, Qt, qDebug
+from PyQt4.QtCore import pyqtRemoveInputHook, QThread, Qt, qDebug, QObject
 from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem
 from widgets.regbank_reader_main import *
-from regbank_reader_model import *
+from regbank_reader_model import model, parse_tib_file
 from widgets.regbank_address_dialog import *
 from widgets.register_tab import *
+from pdb import set_trace
 
 #class register_table_t (QWidget, Ui_register_tab, QObject) :
 #
@@ -183,7 +184,7 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
         super(regbank_main_window_t, self).__init__()
         self.target_list = []
         self.register_tabs = {}
-        self.model = regbank_reader_model_t(tib_file)
+        self.model = model
         self.valid_db = False
 
     def initialize(self):
@@ -372,18 +373,31 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('tib_file', nargs="?")
-    parser.add_argument('c', nargs="?")
+    parser.add_argument('-f', nargs=1, help="Process specified tib file")
+    parser.add_argument('-gui', action="store_true", help="Start in gui mode")
     parse_res = parser.parse_args()
-    pyqtRemoveInputHook()
-    app = QApplication(sys.argv)
-    window = QMainWindow()
-    register_main_window = regbank_main_window_t(parse_res.tib_file)
-    register_main_window.setupUi(window)
+    gui = parse_res.gui
+    tib_file = None
+    if len(parse_res.f):
+        tib_file = parse_res.f[0]
+    if gui:
+        pyqtRemoveInputHook()
+        app = QApplication(sys.argv)
+        window = QMainWindow()
+        register_main_window = regbank_main_window_t(tib_file)
+        register_main_window.setupUi(window)
     
-    # Setup signals and slots
-    register_main_window.initialize()
+        # Setup signals and slots
+        register_main_window.initialize()
 
-    # Show the application
-    window.show()
-    app.exec()
+        # Show the application
+        window.show()
+        app.exec()
+    else:
+        model.cmd_line = True
+        if tib_file:
+            model.tib_file = tib_file
+            parse_tib_file(tib_file)
+        else:
+            print("Please pass a tib file to process")
+

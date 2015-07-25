@@ -16,8 +16,6 @@ bitfield_t   = StructDict("bitfield_t", ["value", "mask",
                                          "rshift", "end",
                                          "start"])
 
-model = ""
-
 #class regbank_reader_model_t(QObject):
 #    signal_targets_info  = pyqtSignal(list)
 #    signal_target_connection_status = pyqtSignal(str)
@@ -221,7 +219,7 @@ class regbank_reader_model_t (QObject):
     target_search_thread = None
     keep_alive_thread = None
 
-    def __init__(self, tib_file, cmd_line=False, server_udp_port=2222):
+    def __init__(self, tib_file=None, cmd_line=False, server_udp_port=2222):
         super(regbank_reader_model_t, self).__init__()
         self.db = regbank_parser.db # Reference to actual database
         self.client = client_t(server_udp_port)
@@ -285,7 +283,10 @@ class regbank_reader_model_t (QObject):
         self.client.disconnect_server()
         self.signal_target_disconnected.emit(target)
 
-    def create_mem_map(self, start_addr, end_addr):
+    def create_mem_map(self, regbank_name, sheet_name):
+        sheet = self.db[regbank_name][sheet_name]
+        start_addr = sheet.start_addr
+        end_addr   = sheet.end_addr
         msg_mmap_init = msg_req_t()
         msg_mmap_init.handle = id(start_addr)+id(end_addr)
         msg_mmap_init.req_type = MEM_MAP_SPACE_REQ
@@ -315,6 +316,8 @@ class regbank_reader_model_t (QObject):
             assert resp.value != None, "Invalid state"
             return resp.value; # Read success
         else:
+            set_trace()
+            pass
             return None;       # Read failed
 
     def write_address(self, address, value, dynamic_mmap=True):
@@ -380,6 +383,8 @@ class regbank_reader_model_t (QObject):
         except:
             set_trace()
             pass
+
+model = regbank_reader_model_t()
 
 def get_bitfield_spec(start=0, end=31):
     bitfield = bitfield_t()
@@ -593,6 +598,7 @@ def parse_tib_file(tib_file):
 #        eval(tib, globals(), locals())
 #    exec(open(tib_file, "r").read(), globals(), locals())
     global_env = dict()
+    global_env["model"] = model
     for (key, value) in globals().items():
         if type(value)==types.FunctionType:
             global_env[key] = value
@@ -619,6 +625,84 @@ def parse_tib_file(tib_file):
 def initialize():
     pass
 
+## Exported API
+def connect(ip_addr, port, prot):
+    target = target_t(ip_addr, port, prot, 0)
+    model.connect_to_target(target)
+
+
+def load_regbank(regbank_file):
+    if re.search("^.", regbank_file):
+        regbank_file = dirname(model.tib_file) + "/" + regbank_file
+    regbank_parser.regbank_load_excel(regbank_file)
+
+def unload_regbank(name):
+    pass
+
+def load_sheet(regbank_sheet, base_addr, offset_size, as_sheet=None):
+    offset_type = offsets_enum_t.BYTE_OFFSETS if offset_size==1 else \
+        offsets_enum_t.WORD_OFFSETS
+    regbank_name = regbank_sheet.__regbank_name__
+    sheet_name   = regbank_sheet.__sheet_name__
+    regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
+        offset_type, as_sheet)
+    model.create_mem_map(regbank_name, as_sheet if as_sheet else sheet_name)
+
+def unload_sheet(regbank_sheet):
+    regbank_name = regbank_sheet.__regbank_name__
+    sheet_name   = regbank_sheet.__sheet_name__
+    regbank_parser.regbank_unload_sheet(regbank_name, sheet_name)
+    
+
+def read(read_from, bitmask=None):
+    if bitmask:
+        bitfield = get_bitfield_spec(bitmask[-1], bitmask[0])
+    else:
+        bitfield = get_bitfield_spec()
+    if type(read_from)==int:
+        # Read from address specified
+        value = model.read_address(read_from)
+        return (value & bitfield.mask) >> bitfield.rshift
+    else:
+        # Read from register specified
+        regbank_name  = read_from.__regbank_name__
+        sheet_name    = read_from.__sheet_name__
+        register_name = read_from.__register_name__
+        try:
+            subfield_name = read_from.__subfield_name__
+        except:
+            subfield_name = None
+        value = model.read_register(regbank_name, sheet_name, register_name, subfield_name)
+        return (value & bitfield.mask) >> bitfield.rshift
+
+def write(write_to, write_value, bitmask=None):
+    if bitmask:
+        bitfield = get_bitfield_spec(bitmask[-1], bitmask[0])
+    else:
+        bitfield = get_bitfield_spec()
+    if type(write_to)==int:
+        if bitmask:
+            # Read modify and write sequence
+            read_value = read(write_to)
+            read_value &= bitfield.mask
+            assert (write_value <= bitfield.value), "Number given is larger than bitfield specification"
+            write_value = read_value | (write_value << bitfield.rshift)
+            model.write_address(write_to, write_value)
+        else:
+            # Full register write sequence
+            model.write_address(write_to, write_value)
+    else:
+        # Write to specified register
+        regbank_name  = write_to.__regbank_name__
+        sheet_name    = write_to.__sheet_name__
+        register_name = write_to.__register_name__
+        try:
+            subfield_name = write_to.__subfield_name__
+        except:
+            subfield_name = None
+        write_value = (write_value & bitfield.mask) >> bitfield.rshift
+        model.write_register(regbank_name, sheet_name, register_name, subfield_name, write_value)
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -629,7 +713,11 @@ if __name__ == "__main__":
         cmd_line = True
     else:
         cmd_line = False
-    model = regbank_reader_model_t(fnames[0], cmd_line)
-    from script_api import *
+    model.cmd_line = cmd_line
+    if (fnames[0]) :
+        model.tib_file = fnames[0]
     if cmd_line:
         parse_tib_file(fnames[0])
+
+
+

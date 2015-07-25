@@ -140,6 +140,11 @@ def regbank_make_struct(regbank_name, sheet_name):
     setattr(regbank, sheet_name, sheet)
     db_dict[regbank_name] = regbank
 
+def regbank_unmake_struct(regbank_name, sheet_name):
+    regbank = db_dict[regbank_name]
+    delattr(regbank, sheet_name)
+    db_dict[regbank_name] = regbank
+
 def regbank_load_sheet(regbank_name, sheet_name, 
         base_addr, offset_type=offsets_enum_t.BYTE_OFFSETS, as_sheet_name=None):
     assert regbank_name in regbank_files.keys(), \
@@ -202,7 +207,12 @@ def regbank_load_sheet(regbank_name, sheet_name,
 def regbank_unload_sheet(regbank_name, sheet_name):
     if regbank_name in db.keys():
         if sheet_name in db[regbank_name].keys():
+            regbank_unmake_struct(regbank_name, sheet_name)
             db[regbank_name].pop(sheet_name)
+        else:
+            assert 0, "Unknown sheet name provided"
+    else:
+        assert 0, "Unknown regbank name provided"
 
 def regbank_offset_size_predict(sheet):
     diffs = {1:0, 4:0}
