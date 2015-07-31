@@ -1,7 +1,7 @@
 # Lines Starting with '#' are ignored, ' ' character is ignored if more than one.
 # Lines containing '#' after each tib is treated as a comment
 
-connect("192.168.1.2", "3333", "TCP")
+connect("192.168.32.12", "3333", "tcp")
 print(hex(read(0x10000, [9,0])))
 write(0x10004, 0x00)
 write(0x10008, 0x07, [3,0]) 

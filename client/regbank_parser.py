@@ -169,7 +169,10 @@ def regbank_load_sheet(regbank_name, sheet_name,
         assert 0, "Register sheet is an invalid sheet"
 
     if as_sheet_name:
-        assert as_sheet_name not in db[regbank_name].keys()
+        try:
+            assert as_sheet_name not in db[regbank_name].keys()
+        except:
+            set_trace()
         sheet_name = as_sheet_name
     db[regbank_name][sheet_name] = sheet_t()
     db[regbank_name][sheet_name].base_addr = base_addr
@@ -188,9 +191,6 @@ def regbank_load_sheet(regbank_name, sheet_name,
             db[regbank_name][sheet_name].registers[register_name] = register
         if row_idx>=xl_sheet.nrows :
             break
-    predicted_offset_type = regbank_offset_size_predict(db[regbank_name][sheet_name])
-    assert predicted_offset_type==offset_type, "Predicted offset type" \
-            "different from given offset type"
     db[regbank_name][sheet_name].offset_type = offset_type
     db[regbank_name][sheet_name].mmap_done = False
     first_register_name = list(db[regbank_name][sheet_name].registers.keys())[0]
@@ -223,6 +223,23 @@ def regbank_offset_size_predict(sheet):
         if offset_diff in [1, 4]:
             diffs[offset_diff] += 1
     return offsets_enum_t.WORD_OFFSETS if diffs[1] > diffs[4] else offsets_enum_t.BYTE_OFFSETS
+
+def is_regbank_sheet_loaded(regbank_name, sheet_name, as_sheet_name):
+    if as_sheet_name:
+        sheet_name = as_sheet_name
+    if regbank_name in db.keys():
+        if sheet_name in db[regbank_name].keys():
+            if db[regbank_name][sheet_name] == None:
+                return False
+            else:
+                return True
+        else:
+            return False
+    else:
+        return False
+
+        
+
 
 if __name__ == "__main__":
     import os

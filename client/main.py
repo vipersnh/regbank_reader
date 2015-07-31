@@ -4,7 +4,7 @@ import re
 from hashlib import md5
 from os.path import basename, splitext
 from PyQt4.QtCore import pyqtRemoveInputHook, QThread, Qt, qDebug, QObject
-from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem
+from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem, QMessageBox
 from widgets.regbank_reader_main import *
 from regbank_reader_model import model, parse_tib_file, target_t, load_sheet, load_regbank
 from widgets.regbank_address_dialog import *
@@ -331,11 +331,17 @@ class regbank_reader_gui_controller_t:
         
 
         # TIB Initialization Section
+        self.gui.pushButton_loadTibFile.setEnabled(False)
         self.gui.pushButton_loadTibFile.clicked.connect(self.slot_gui_load_tib_file)
         self.gui.comboBox_tibList.setEditable(True)
         self.gui.comboBox_tibList.lineEdit().setAlignment(Qt.AlignCenter)
         self.gui.comboBox_tibList.lineEdit().setReadOnly(True)
+        self.gui.pushButton_executeTib.setEnabled(False)
         self.gui.pushButton_executeTib.clicked.connect(self.slot_gui_execute_tib)
+
+        # Register access Section
+
+        # TIB Processor section
  
         # Connect slots related to targets
         self.model.signal_target_connected.connect(self.slot_gui_target_connected)
@@ -378,7 +384,6 @@ class regbank_reader_gui_controller_t:
         self.gui.pushButton_loadRegBank.setEnabled(True)
         self.gui.pushButton_loadSheet.setEnabled(True)
         self.gui.pushButton_loadTibFile.setEnabled(True)
-        self.gui.pushButton_executeTib.setEnabled(True)
         self.gui.pushButton_targetConnect.setText("Click to disconnect")
         self.gui.comboBox_targetsList.setEnabled(False)
 
@@ -386,7 +391,6 @@ class regbank_reader_gui_controller_t:
         self.gui.pushButton_loadRegBank.setEnabled(False)
         self.gui.pushButton_loadSheet.setEnabled(False)
         self.gui.pushButton_loadTibFile.setEnabled(False)
-        self.gui.pushButton_executeTib.setEnabled(False)
         self.gui.pushButton_targetConnect.setText("Click to connect")
         self.gui.comboBox_targetsList.setEnabled(True)
 
@@ -399,11 +403,23 @@ class regbank_reader_gui_controller_t:
             regbank_name = splitext(basename(fname))[0]
             if fname not in self.regbanks_path_list.values():
                 self.regbanks_path_list[regbank_name] = fname
+                load_regbank(fname)
             self.slot_gui_regbank_changed(regbank_name)
 
     def slot_gui_regbank_sheet_changed(self):
         name = self.gui.comboBox_sheetSelect.currentText()
         self.gui.lineEdit_asSheetName.setText(name)
+        regbank_name = self.gui.comboBox_regbankSelect.currentText()
+        try:
+            sheet_name   = name
+            predicted_offset = self.model.get_sheet_offsets(regbank_name, sheet_name)
+            self.gui.comboBox_sheetOffsets.setCurrentIndex(0 if predicted_offset==0 else 1)
+        except:
+            sheet_name = self.gui.lineEdit_asSheetName.text()
+            predicted_offset = self.model.get_sheet_offsets(regbank_name, sheet_name)
+            self.gui.comboBox_sheetOffsets.setCurrentIndex(0 if predicted_offset==0 else 1)
+
+
 
     def slot_gui_load_sheet(self):
         regbank_name = self.gui.comboBox_regbankSelect.currentText()
@@ -413,10 +429,12 @@ class regbank_reader_gui_controller_t:
         if base_addr is not "":
             base_addr = int(base_addr, 0)
             offset_size = 1 if self.gui.comboBox_sheetOffsets.currentIndex()==0 else 4
-            load_sheet(model.db_dict[regbank_name], base_addr, offset_size, as_sheet_name)
+            if as_sheet_name==sheet_name :
+                as_sheet_name = None
+            load_sheet(getattr(model.db_dict[regbank_name], sheet_name), base_addr, offset_size, as_sheet_name)
         else:
             # Warn about invalid base_addr
-            msgBox = QMessageBox(QMessageBox.Warning, "...",  "Invalid base_addr specified")
+            msgBox = QMessageBox(QMessageBox.Warning, "...",  "Invalid \"At Address\" specified")
             msgBox.setStandardButtons(QMessageBox.Ok);
             msgBox.exec_()
 
@@ -427,7 +445,9 @@ class regbank_reader_gui_controller_t:
             set_trace()
         workbook = xlrd.open_workbook(fname)
         sheet_names = workbook.sheet_names()
+        self.gui.comboBox_regbankSelect.blockSignals(True)
         self.gui.comboBox_regbankSelect.addItem(regbank_name)
+        self.gui.comboBox_regbankSelect.blockSignals(False)
         self.gui.comboBox_sheetSelect.clear()
         for sheet_name in sheet_names:
             self.gui.comboBox_sheetSelect.addItem(sheet_name)
@@ -438,6 +458,7 @@ class regbank_reader_gui_controller_t:
         fname = fdialog.getOpenFileName(None, 'Open file',
                 "./", "All files (*.tib)")
         if fname is not'' and re.search(".tib$", fname):
+            self.gui.pushButton_executeTib.setEnabled(True)
             tib_name = splitext(basename(fname))[0]
             if fname not in self.tibs_list.values():
                 self.tibs_list[tib_name] = fname
@@ -445,7 +466,8 @@ class regbank_reader_gui_controller_t:
 
     def slot_gui_execute_tib(self):
         tib_name = self.gui.comboBox_tibList.currentText()
-        tib_file = self.tibs_list(tib_name)
+        tib_file = self.tibs_list[tib_name]
+        self.model.tib_file = tib_file
         parse_tib_file(tib_file)
 
     def start(self):

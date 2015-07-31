@@ -389,6 +389,15 @@ class regbank_reader_model_t (QObject):
             set_trace()
             pass
 
+    def get_sheet_offsets(self, regbank_name, sheet_name):
+        as_sheet_name = "__dummy__"
+        regbank_parser.regbank_load_sheet(regbank_name, sheet_name, 0x00, as_sheet_name=as_sheet_name)
+        predicted_offset = regbank_parser.regbank_offset_size_predict(
+            self.db[regbank_name][as_sheet_name])
+        regbank_parser.regbank_unload_sheet(regbank_name, as_sheet_name)
+        return predicted_offset
+
+
 model = regbank_reader_model_t()
 
 def get_bitfield_spec(start=0, end=31):
@@ -624,7 +633,11 @@ def parse_tib_file(tib_file):
             for (key, value) in regbank_parser.db_dict.items():
                 if key not in global_env.keys():
                     global_env[key] = value
-            exec(tib, global_env)
+            try:
+                exec(tib, global_env)
+            except:
+                set_trace()
+                pass
     model.signal_tib_file_loaded.emit(tib_file)        
 
 def initialize():
@@ -640,8 +653,11 @@ def connect(ip_addr, port, prot):
 
 
 def load_regbank(regbank_file):
-    if re.search("^.", regbank_file):
-        regbank_file = dirname(model.tib_file) + "/" + regbank_file
+    if re.search("^\.", regbank_file):
+        try:
+            regbank_file = dirname(model.tib_file) + "/" + regbank_file
+        except:
+            set_trace()
     regbank_parser.regbank_load_excel(regbank_file)
     model.signal_regbank_file_loaded.emit(regbank_file)
 
@@ -653,9 +669,14 @@ def load_sheet(regbank_sheet, base_addr, offset_size, as_sheet=None):
         offsets_enum_t.WORD_OFFSETS
     regbank_name = regbank_sheet.__regbank_name__
     sheet_name   = regbank_sheet.__sheet_name__
-    regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
-        offset_type, as_sheet)
-    model.create_mem_map(regbank_name, as_sheet if as_sheet else sheet_name)
+    if not regbank_parser.is_regbank_sheet_loaded(regbank_name, sheet_name, as_sheet):
+        regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
+            offset_type, as_sheet)
+        predicted_offset_type = regbank_parser.regbank_offset_size_predict(
+                model.db[regbank_name][as_sheet if as_sheet else sheet_name])
+        assert predicted_offset_type==offset_type, "Predicted offset type" \
+            "different from given offset type"
+        model.create_mem_map(regbank_name, as_sheet if as_sheet else sheet_name)
 
 def unload_sheet(regbank_sheet):
     regbank_name = regbank_sheet.__regbank_name__
