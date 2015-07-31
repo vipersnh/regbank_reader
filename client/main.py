@@ -1,3 +1,4 @@
+import xlrd
 import sys
 import re
 from hashlib import md5
@@ -5,10 +6,11 @@ from os.path import basename, splitext
 from PyQt4.QtCore import pyqtRemoveInputHook, QThread, Qt, qDebug, QObject
 from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem
 from widgets.regbank_reader_main import *
-from regbank_reader_model import model, parse_tib_file
+from regbank_reader_model import model, parse_tib_file, target_t, load_sheet, load_regbank
 from widgets.regbank_address_dialog import *
 from widgets.register_tab import *
 from pdb import set_trace
+from os.path import basename, splitext
 
 #class register_table_t (QWidget, Ui_register_tab, QObject) :
 #
@@ -182,95 +184,6 @@ from pdb import set_trace
 class regbank_main_window_t(Ui_regbank_reader_main, QObject):
     def __init__(self, tib_file=None):
         super(regbank_main_window_t, self).__init__()
-        self.target_list = []
-        self.register_tabs = {}
-        self.model = model
-        self.valid_db = False
-
-    def initialize(self):
-        self.targetButton.setEnabled(False)
-        self.targetButton.setText("Waiting for targets")
-        self.targetsList.setEditable(True)
-        self.targetsList.lineEdit().setAlignment(Qt.AlignCenter)
-        self.targetsList.lineEdit().setReadOnly(True)
-
-        self.loadTIBButton.setEnabled(False)
-
-        self.regbankSelect.setEditable(True)
-        self.regbankSelect.lineEdit().setAlignment(Qt.AlignCenter)
-        self.regbankSelect.lineEdit().setReadOnly(True)
-
-        self.sheetSelect.setEditable(True)
-        self.sheetSelect.lineEdit().setAlignment(Qt.AlignCenter)
-        self.sheetSelect.lineEdit().setReadOnly(True)
-
-        self.registerSelect.setEditable(True)
-        self.registerSelect.lineEdit().setAlignment(Qt.AlignCenter)
-        self.registerSelect.lineEdit().setReadOnly(True)
-
-#        self.regbank_button.clicked.connect(self.slot_regbank_button_clicked)
-#        self.signal_load_regbank.connect(self.model.load_regbank_file)
-#        self.model.signal_regbank_connection.connect(self.regbank_button.setText)
-#        self.model.signal_regbank_list.connect(self.slot_set_regbank_list)
-#        self.model.signal_regbank_info.connect(self.slot_set_regbank_info)
-#        self.model.signal_target_connection.connect(self.target_button.setText)
-#        self.model.signal_target_info.connect(self.slot_set_target_list)
-#        self.signal_connect_target.connect(self.model.connect_to_target)
-#        self.register_sheet_selection.currentIndexChanged.connect(self.slot_sheet_changed)
-#        self.signal_regbank_additional_info.connect(self.model.update_regbank_additional_info)
-#        self.signal_register_selected.connect(self.model.get_register)
-#        self.register_selection.currentIndexChanged.connect(self.slot_register_changed)
-#        self.target_button.clicked.connect(self.slot_target_button_clicked)
-
-        # Connect slots related to targets
-        self.targetButton.clicked.connect(self.slot_target_button_clicked)
-        self.model.signal_target_connected.connect(self.slot_target_connected)
-        self.model.signal_target_disconnected.connect(self.slot_target_disconnected)
-        self.model.signal_targets_list_updated.connect(self.slot_targets_list_updated)
-
-        self.loadTIBButton.clicked.connect(self.slot_load_tib_file)
-
-        # Start the model
-        self.model.initialize()
-
-    def slot_target_button_clicked(self):
-        target_str = self.targetsList.currentText()
-        [prot, ip_addr, port] = target_str.replace(" ",'').split(':')
-        if self.model.target_connected:
-            # Disconnect currently connected target
-            target = target_t(ip_addr, port, prot, None)
-            self.model.disconnect_from_target(target)
-
-        else:
-            # Connect to target
-            target = target_t(ip_addr, port, prot, None)
-            self.model.connect_to_target(target)
-
-    def slot_targets_list_updated(self, targets):
-        self.targetButton.setEnabled(True)
-        self.targetButton.setText("Click to connect")
-        self.targetsList.clear()
-        for target in targets:
-            target_str = target.protocol + " : " + target.ip_addr + " : " + target.port
-            self.targetsList.addItem(target_str)
-
-    def slot_target_connected(self, target):
-        self.loadTIBButton.setEnabled(True)
-        self.targetButton.setText("Click to disconnect")
-        self.targetsList.setEnabled(False)
-
-    def slot_target_disconnected(self, target):
-        self.loadTIBButton.setEnabled(False)
-        self.targetButton.setText("Click to connect")
-        self.targetsList.setEnabled(True)
-
-    def slot_load_tib_file(self):
-        fdialog = QFileDialog(None)
-        fdialog.setFilter("*.tib")
-        fname = fdialog.getOpenFileName(None, 'Open file',
-                "./", "All files (*.tib)")
-        if fname is not'' and re.search(".tib$", fname):
-            pass
 
     def slot_set_regbank_list(self, cur_idx, regbank_list):
         self.regbank_selection.clear()
@@ -370,6 +283,174 @@ class regbank_main_window_t(Ui_regbank_reader_main, QObject):
         info = regbank_additional_info_t(regbank_name, base_addr, offset_size)
         return info
 
+## Glue logic between UI and Model
+class regbank_reader_gui_controller_t:
+    def __init__(self, tib_file):
+        self.init_tib_file = tib_file
+
+    def initialize(self, tib_file = None):
+        self.regbanks_path_list = dict()
+        self.tibs_list = dict()
+        self.target_list = list()
+        self.register_tabs = dict()
+
+        self.model = model
+        self.model.cmd_line = False
+        self.model.tib_file = tib_file
+        
+        self.window = QMainWindow()
+        self.gui = regbank_main_window_t()
+        self.gui.setupUi(self.window)
+        self.window.show()
+
+        # Target Initialization Section
+        self.gui.pushButton_targetConnect.setEnabled(False)
+        self.gui.pushButton_targetConnect.setText("Waiting for targets")
+        self.gui.comboBox_targetsList.setEditable(True)
+        self.gui.comboBox_targetsList.lineEdit().setAlignment(Qt.AlignCenter)
+        self.gui.comboBox_targetsList.lineEdit().setReadOnly(True)
+        self.gui.pushButton_targetConnect.clicked.connect(self.slot_gui_target_button_clicked)
+
+        # Regbank Initialization Section
+        self.gui.pushButton_loadRegBank.setEnabled(False)
+        self.gui.comboBox_regbankSelect.setEditable(True)
+        self.gui.comboBox_regbankSelect.lineEdit().setAlignment(Qt.AlignCenter)
+        self.gui.comboBox_regbankSelect.lineEdit().setReadOnly(True)
+        self.gui.comboBox_sheetSelect.setEditable(True)
+        self.gui.comboBox_sheetSelect.lineEdit().setAlignment(Qt.AlignCenter)
+        self.gui.comboBox_sheetSelect.lineEdit().setReadOnly(True)
+        self.gui.comboBox_sheetOffsets.setEditable(True)
+        self.gui.comboBox_sheetOffsets.lineEdit().setAlignment(Qt.AlignCenter)
+        self.gui.comboBox_sheetOffsets.lineEdit().setReadOnly(True)
+        self.gui.comboBox_sheetOffsets.addItem("BYTE_OFFSETS")
+        self.gui.comboBox_sheetOffsets.addItem("WORD_OFFSETS")
+        self.gui.pushButton_loadRegBank.clicked.connect(self.slot_gui_load_regbank)
+        self.gui.pushButton_loadSheet.clicked.connect(self.slot_gui_load_sheet)
+        self.gui.comboBox_regbankSelect.currentIndexChanged.connect(self.slot_gui_regbank_changed)
+        self.gui.comboBox_sheetSelect.currentIndexChanged.connect(self.slot_gui_regbank_sheet_changed)
+        
+
+        # TIB Initialization Section
+        self.gui.pushButton_loadTibFile.clicked.connect(self.slot_gui_load_tib_file)
+        self.gui.comboBox_tibList.setEditable(True)
+        self.gui.comboBox_tibList.lineEdit().setAlignment(Qt.AlignCenter)
+        self.gui.comboBox_tibList.lineEdit().setReadOnly(True)
+        self.gui.pushButton_executeTib.clicked.connect(self.slot_gui_execute_tib)
+ 
+        # Connect slots related to targets
+        self.model.signal_target_connected.connect(self.slot_gui_target_connected)
+        self.model.signal_target_disconnected.connect(self.slot_gui_target_disconnected)
+        self.model.signal_targets_list_updated.connect(self.slot_gui_targets_list_updated)
+
+        # Start the model
+        self.model.initialize()
+
+        if self.init_tib_file:
+            fname = self.init_tib_file
+            tib_name = splitext(basename(fname))[0]
+            self.tibs_list[tib_name] = fname
+            self.gui.comboBox_tibList.addItem(tib_name)
+
+    # Target related slots
+    def slot_gui_target_button_clicked(self):
+        target_str = self.gui.comboBox_targetsList.currentText()
+        [prot, ip_addr, port] = target_str.replace(" ",'').split(':')
+        if self.model.target_connected:
+            # Disconnect currently connected target
+            target = target_t(ip_addr, port, prot, None)
+            self.model.disconnect_from_target()
+
+        else:
+            # Connect to target
+            target = target_t(ip_addr, port, prot, None)
+            self.model.connect_to_target(target)
+
+    def slot_gui_targets_list_updated(self, targets):
+        if not self.model.target_connected:
+            self.gui.pushButton_targetConnect.setEnabled(True)
+            self.gui.pushButton_targetConnect.setText("Click to connect")
+            self.gui.comboBox_targetsList.clear()
+            for target in targets:
+                target_str = target.protocol + " : " + target.ip_addr + " : " + target.port
+                self.gui.comboBox_targetsList.addItem(target_str)
+
+    def slot_gui_target_connected(self, target):
+        self.gui.pushButton_loadRegBank.setEnabled(True)
+        self.gui.pushButton_loadSheet.setEnabled(True)
+        self.gui.pushButton_loadTibFile.setEnabled(True)
+        self.gui.pushButton_executeTib.setEnabled(True)
+        self.gui.pushButton_targetConnect.setText("Click to disconnect")
+        self.gui.comboBox_targetsList.setEnabled(False)
+
+    def slot_gui_target_disconnected(self):
+        self.gui.pushButton_loadRegBank.setEnabled(False)
+        self.gui.pushButton_loadSheet.setEnabled(False)
+        self.gui.pushButton_loadTibFile.setEnabled(False)
+        self.gui.pushButton_executeTib.setEnabled(False)
+        self.gui.pushButton_targetConnect.setText("Click to connect")
+        self.gui.comboBox_targetsList.setEnabled(True)
+
+    # Regbank related slots
+    def slot_gui_load_regbank(self):
+        fdialog = QFileDialog(None)
+        fname = fdialog.getOpenFileName(None, 'Open file',
+                "./", "All files (*.xlsx)")
+        if fname is not'' and re.search(".xlsx$", fname):
+            regbank_name = splitext(basename(fname))[0]
+            if fname not in self.regbanks_path_list.values():
+                self.regbanks_path_list[regbank_name] = fname
+            self.slot_gui_regbank_changed(regbank_name)
+
+    def slot_gui_regbank_sheet_changed(self):
+        name = self.gui.comboBox_sheetSelect.currentText()
+        self.gui.lineEdit_asSheetName.setText(name)
+
+    def slot_gui_load_sheet(self):
+        regbank_name = self.gui.comboBox_regbankSelect.currentText()
+        sheet_name = self.gui.comboBox_sheetSelect.currentText()
+        as_sheet_name = self.gui.lineEdit_asSheetName.text()
+        base_addr = self.gui.lineEdit_sheetLoadAddress.text()
+        if base_addr is not "":
+            base_addr = int(base_addr, 0)
+            offset_size = 1 if self.gui.comboBox_sheetOffsets.currentIndex()==0 else 4
+            load_sheet(model.db_dict[regbank_name], base_addr, offset_size, as_sheet_name)
+        else:
+            # Warn about invalid base_addr
+            msgBox = QMessageBox(QMessageBox.Warning, "...",  "Invalid base_addr specified")
+            msgBox.setStandardButtons(QMessageBox.Ok);
+            msgBox.exec_()
+
+    def slot_gui_regbank_changed(self, regbank_name):
+        try:
+            fname = self.regbanks_path_list[regbank_name]
+        except:
+            set_trace()
+        workbook = xlrd.open_workbook(fname)
+        sheet_names = workbook.sheet_names()
+        self.gui.comboBox_regbankSelect.addItem(regbank_name)
+        self.gui.comboBox_sheetSelect.clear()
+        for sheet_name in sheet_names:
+            self.gui.comboBox_sheetSelect.addItem(sheet_name)
+
+    # TIB related slots
+    def slot_gui_load_tib_file(self):
+        fdialog = QFileDialog(None)
+        fname = fdialog.getOpenFileName(None, 'Open file',
+                "./", "All files (*.tib)")
+        if fname is not'' and re.search(".tib$", fname):
+            tib_name = splitext(basename(fname))[0]
+            if fname not in self.tibs_list.values():
+                self.tibs_list[tib_name] = fname
+                self.gui.comboBox_tibList.addItem(tib_name)
+
+    def slot_gui_execute_tib(self):
+        tib_name = self.gui.comboBox_tibList.currentText()
+        tib_file = self.tibs_list(tib_name)
+        parse_tib_file(tib_file)
+
+    def start(self):
+        pass
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -378,20 +459,14 @@ if __name__ == "__main__":
     parse_res = parser.parse_args()
     gui = parse_res.gui
     tib_file = None
-    if len(parse_res.f):
+    if parse_res.f:
         tib_file = parse_res.f[0]
     if gui:
         pyqtRemoveInputHook()
         app = QApplication(sys.argv)
-        window = QMainWindow()
-        register_main_window = regbank_main_window_t(tib_file)
-        register_main_window.setupUi(window)
-    
-        # Setup signals and slots
-        register_main_window.initialize()
-
-        # Show the application
-        window.show()
+        gui_controller = regbank_reader_gui_controller_t(tib_file)
+        gui_controller.initialize()
+        gui_controller.start()
         app.exec()
     else:
         model.cmd_line = True

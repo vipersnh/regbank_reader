@@ -212,7 +212,7 @@ class regbank_reader_model_t (QObject):
     # Signals
     signal_targets_list_updated = pyqtSignal(list)
     signal_target_connected = pyqtSignal(target_t)
-    signal_target_disconnected = pyqtSignal(target_t)
+    signal_target_disconnected = pyqtSignal()
     signal_tib_file_loaded = pyqtSignal(str)
     signal_regbank_file_loaded = pyqtSignal(str)
 
@@ -229,6 +229,7 @@ class regbank_reader_model_t (QObject):
         self.tib_file = tib_file
 
     def initialize(self):
+        self.db_dict = regbank_parser.db_dict
         self.target_search_thread = QThread()
         self.target_search_thread.started.connect(self.target_search, 
                 Qt.DirectConnection)
@@ -237,6 +238,10 @@ class regbank_reader_model_t (QObject):
         self.keep_alive_thread.started.connect(self.keep_alive, 
                 Qt.DirectConnection)
         self.keep_alive_thread.start()
+
+        # Process the supplied tib_file if any
+        if self.tib_file:
+            parse_tib_file(self.tib_file)
 
     def add_new_target(self ,target):
         target_already_listed = False
@@ -277,11 +282,11 @@ class regbank_reader_model_t (QObject):
                 target.port, target.max_msg_len])
         self.signal_target_connected.emit(target)
 
-    def disconnect_from_target(self, target):
+    def disconnect_from_target(self):
         self.target_connected = False
         self.selected_target = None
         self.client.disconnect_server()
-        self.signal_target_disconnected.emit(target)
+        self.signal_target_disconnected.emit()
 
     def create_mem_map(self, regbank_name, sheet_name):
         sheet = self.db[regbank_name][sheet_name]
@@ -628,6 +633,9 @@ def initialize():
 ## Exported API
 def connect(ip_addr, port, prot):
     target = target_t(ip_addr, port, prot, 0)
+    if model.target_connected:
+        model.disconnect_from_target()   
+    model.add_new_target(target)
     model.connect_to_target(target)
 
 
@@ -635,6 +643,7 @@ def load_regbank(regbank_file):
     if re.search("^.", regbank_file):
         regbank_file = dirname(model.tib_file) + "/" + regbank_file
     regbank_parser.regbank_load_excel(regbank_file)
+    model.signal_regbank_file_loaded.emit(regbank_file)
 
 def unload_regbank(name):
     pass
