@@ -18,7 +18,7 @@
     <item>
      <widget class="QTabWidget" name="mainTabWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>2</number>
       </property>
       <widget class="QWidget" name="initializationTab">
        <attribute name="title">
@@ -629,61 +629,23 @@
          </layout>
         </item>
         <item>
-         <widget class="QPlainTextEdit" name="tibCommandsInput">
+         <widget class="QLineEdit" name="lineEdit">
           <property name="minimumSize">
            <size>
-            <width>891</width>
-            <height>141</height>
+            <width>0</width>
+            <height>61</height>
            </size>
           </property>
-          <property name="maximumSize">
-           <size>
-            <width>16777215</width>
-            <height>251</height>
-           </size>
+          <property name="text">
+           <string>&gt;&gt;&gt;</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
           </property>
          </widget>
         </item>
         <item>
          <layout class="QHBoxLayout" name="horizontalLayout_5">
-          <item>
-           <widget class="QPushButton" name="runTibCommandsButton">
-            <property name="minimumSize">
-             <size>
-              <width>131</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>16777215</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="text">
-             <string>Run TIB's</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="clearTbCommandsButton">
-            <property name="minimumSize">
-             <size>
-              <width>141</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>16777215</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="text">
-             <string>Clear TIB's</string>
-            </property>
-           </widget>
-          </item>
           <item>
            <spacer name="horizontalSpacer">
             <property name="orientation">
@@ -755,12 +717,18 @@
          </layout>
         </item>
         <item>
-         <widget class="QPlainTextEdit" name="tibCommandsOutput">
+         <widget class="QPlainTextEdit" name="plainTextEdit_tibOutput">
           <property name="minimumSize">
            <size>
             <width>921</width>
             <height>251</height>
            </size>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="backgroundVisible">
+           <bool>false</bool>
           </property>
          </widget>
         </item>

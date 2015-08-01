@@ -15,7 +15,7 @@ target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
 bitfield_t   = StructDict("bitfield_t", ["value", "mask", 
                                          "rshift", "end",
                                          "start"])
-
+global_env   = dict()
 #class regbank_reader_model_t(QObject):
 #    signal_targets_info  = pyqtSignal(list)
 #    signal_target_connection_status = pyqtSignal(str)
@@ -215,6 +215,7 @@ class regbank_reader_model_t (QObject):
     signal_target_disconnected = pyqtSignal()
     signal_tib_file_loaded = pyqtSignal(str)
     signal_regbank_file_loaded = pyqtSignal(str)
+    signal_tib_exec_op = pyqtSignal(list)
 
     target_search_thread = None
     keep_alive_thread = None
@@ -605,17 +606,13 @@ def parse_tib(tib, tib_file):
 
 def parse_tib_file(tib_file):
     global model
+
     tib_file_path = dirname(tib_file)
     if not model.target_connected and not model.cmd_line:
         assert 0, "Target must be connected before parsing tib file"
 #    for tib in f:
 #        eval(tib, globals(), locals())
 #    exec(open(tib_file, "r").read(), globals(), locals())
-    global_env = dict()
-    global_env["model"] = model
-    for (key, value) in globals().items():
-        if type(value)==types.FunctionType:
-            global_env[key] = value
     with open(tib_file, "r") as f:
         for tib in f:
             tib = tib.strip()
@@ -630,18 +627,31 @@ def parse_tib_file(tib_file):
                 # Trim contents after '#' in the tib
                 tib = tib[:tib.find('#')].strip()
 
-            for (key, value) in regbank_parser.db_dict.items():
-                if key not in global_env.keys():
-                    global_env[key] = value
             try:
-                exec(tib, global_env)
+                exec_tib(tib)
             except:
                 set_trace()
                 pass
     model.signal_tib_file_loaded.emit(tib_file)        
 
+def exec_tib(tib):
+    for (key, value) in regbank_parser.db_dict.items():
+        if key not in global_env.keys():
+            global_env[key] = value
+    global_env["_print_buf_"].clear()
+    exec(tib, global_env)
+    model.signal_tib_exec_op.emit(global_env["_print_buf_"])
+    
 def initialize():
-    pass
+    global_env["model"] = model
+    for (key, value) in globals().items():
+        if type(value)==types.FunctionType:
+            global_env[key] = value
+    global_env["_print_buf_"] = list()
+    def _print_(str_in):
+        assert type(str_in)==str, "Invalid input to print"
+        global_env["_print_buf_"].append(str_in)
+    global_env["print"] = _print_
 
 ## Exported API
 def connect(ip_addr, port, prot):

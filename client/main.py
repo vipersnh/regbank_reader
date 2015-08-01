@@ -7,6 +7,7 @@ from PyQt4.QtCore import pyqtRemoveInputHook, QThread, Qt, qDebug, QObject
 from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem, QMessageBox
 from widgets.regbank_reader_main import *
 from regbank_reader_model import model, parse_tib_file, target_t, load_sheet, load_regbank
+import regbank_reader_model
 from widgets.regbank_address_dialog import *
 from widgets.register_tab import *
 from pdb import set_trace
@@ -349,6 +350,7 @@ class regbank_reader_gui_controller_t:
         self.model.signal_targets_list_updated.connect(self.slot_gui_targets_list_updated)
 
         # Start the model
+        regbank_reader_model.initialize()
         self.model.initialize()
 
         if self.init_tib_file:
@@ -465,6 +467,7 @@ class regbank_reader_gui_controller_t:
                 self.gui.comboBox_tibList.addItem(tib_name)
 
     def slot_gui_execute_tib(self):
+        set_trace()
         tib_name = self.gui.comboBox_tibList.currentText()
         tib_file = self.tibs_list[tib_name]
         self.model.tib_file = tib_file
