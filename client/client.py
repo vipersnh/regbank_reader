@@ -77,7 +77,6 @@ class client_t:
 
     def disconnect_server(self) :
         if self.server_connected:
-            print("Disconnected from server !\n");
             self.server_socket_handle.close();
 
     def query_server(self, msg) :

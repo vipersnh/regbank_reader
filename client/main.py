@@ -1,292 +1,206 @@
 import xlrd
 import sys
 import re
+from StructDict import StructDict
+from regbank_parser import offsets_enum_t
 from hashlib import md5
 from os.path import basename, splitext
-from PyQt4.QtCore import pyqtRemoveInputHook, QThread, Qt, qDebug, QObject
+from PyQt4.QtCore import pyqtRemoveInputHook, pyqtSignal, QThread, Qt, qDebug, QObject
 from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem, QMessageBox
 from widgets.regbank_reader_main import *
-from regbank_reader_model import model, parse_tib_file, target_t, load_sheet, load_regbank
+from regbank_reader_model import model, parse_tib_file, target_t, load_sheet, load_regbank, exec_tib
 import regbank_reader_model
-from widgets.regbank_address_dialog import *
 from widgets.register_tab import *
 from pdb import set_trace
+from collections import namedtuple
 from os.path import basename, splitext
 
-#class register_table_t (QWidget, Ui_register_tab, QObject) :
-#
-#    # To store the columns and their spacing details
-#    view_fields = [view_field_t("Subfield Name", 0), view_field_t("Field desc", 1),
-#                   view_field_t("Value", 2), view_field_t("Default value", 3),
-#                   view_field_t("General Description", 4)]
-#
-#    def __init__(self, register, parent, model):
-#        super(register_table_t, self).__init__(parent)
-#        self.setupUi(self)
-#        self.show()
-#
-#        qDebug("register_table_t with register "+str(id(register)))
-#        self.register = register
-#        self.register_addr = self.register.base_addr + self.register.offset_size * self.register.offset_addr
-#        self.register_name_disp.setText(self.register.name + "@" + self.toHex(self.register_addr))
-#        self.model = model
-#        self.field_infos = []
-#        self.auto_read_mode.setEditable(True)
-#        self.auto_read_mode.lineEdit().setAlignment(Qt.AlignCenter)
-#        self.auto_read_mode.lineEdit().setReadOnly(True)
-#
-#        self.addr_offset_type.setEditable(True)
-#        self.addr_offset_type.lineEdit().setAlignment(Qt.AlignCenter)
-#        self.addr_offset_type.lineEdit().setReadOnly(True)
-#
-#        self.register_subfields_view.setRowCount(len(self.register.sub_elements))
-#        self.register_subfields_view.setColumnCount(len(self.view_fields))
-#        self.register_subfields_view.horizontalHeader().setResizeMode(QHeaderView.Stretch)
-#        self.register_subfields_view.verticalHeader().setResizeMode(QHeaderView.Stretch)
-#        self.register_subfields_view.verticalHeader().setVisible(False)
-#        headerLabels = []
-#        qDebug("register_subfields_view items are set now")
-#        for row, sub_element in enumerate(self.register.sub_elements):
-#            view_field = self.view_fields[0]
-#            headerLabels.append(view_field.col_name)
-#            text = sub_element.name
-#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
-#            self.register_subfields_view.setItem(row, view_field.col_num, item)
-#
-#            view_field = self.view_fields[1]
-#            headerLabels.append(view_field.col_name)
-#            positions = re.findall("[0-9]+", sub_element.bit_position)
-#            if len(positions)==1:
-#                start_bit = end_bit = positions[0]
-#            else:
-#                [end_bit, start_bit] = positions
-#            start_bit = int(start_bit, 0)
-#            end_bit   = int(end_bit, 0)
-#            field_info = field_info_t(row_idx=row, col_idx=2, bit_mask=(pow(2, end_bit+1)-1)-(pow(2, start_bit)-1), bit_shift=start_bit)
-#            self.field_infos.append(field_info)
-#            text = str(sub_element.bit_width) + " bits in " + sub_element.bit_position + " SW_ATTR[" + sub_element.sw_attr + "]"
-#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
-#            self.register_subfields_view.setItem(row, view_field.col_num, item)
-#
-#            view_field = self.view_fields[2]
-#            headerLabels.append(view_field.col_name)
-#            text = "--"
-#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
-#            self.register_subfields_view.setItem(row, view_field.col_num, item)
-#
-#            view_field = self.view_fields[3]
-#            headerLabels.append(view_field.col_name)
-#            text = str(sub_element.default_val)
-#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
-#            self.register_subfields_view.setItem(row, view_field.col_num, item)
-#
-#            view_field = self.view_fields[4]
-#            headerLabels.append(view_field.col_name)
-#            text = sub_element.description
-#            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
-#            self.register_subfields_view.setItem(row, view_field.col_num, item)
-#        self.register_subfields_view.setHorizontalHeaderLabels(headerLabels)
-#        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value)
-#        self.register_update_button.clicked.connect(self.slot_register_update_clicked)
-#        self.register_value_edit.editingFinished.connect(self.slot_register_update_write)
-#
-#        self.base_addr_edit.setText(self.toHex(self.register.base_addr))
-#        self.offset_addr_edit.setText(self.toHex(self.register.offset_addr))
-#        self.addr_offset_type.setCurrentIndex(0 if self.register.offset_size==1 else 1)
-#
-#        self.base_addr_edit.editingFinished.connect(self.slot_update_register_address)
-#        self.addr_offset_type.currentIndexChanged.connect(self.slot_update_register_address)
-#        self.offset_addr_edit.editingFinished.connect(self.slot_update_register_address)
-#
-#    def toHex(self, value):
-#        return hex(value).upper().replace("X", "x")
-#
-#    def slot_base_addr_changed(self):
-#        self.register.base_addr = self.toHex(self.base_addr_edit.text())
-#
-#    def slot_update_register_address(self):
-#        base_addr = int(self.base_addr_edit.text(), 0)
-#        offset_addr = int(self.offset_addr_edit.text(), 0)
-#        offset_size = 1 if self.addr_offset_type.currentIndex()==0 else 4
-#        self.register.base_addr = base_addr
-#        self.register.offset_addr = offset_addr
-#        self.register.offset_size = offset_size
-#        self.register_addr = base_addr + offset_addr * offset_size
-#        self.register_name_disp.setText(self.register.name + "@" + self.toHex(self.register_addr))
-#
-#    def slot_offset_addr_changed(self):
-#        self.register.offset_addr = self.toHex(self.offset_addr_edit.text())
-#
-#    def slot_register_set_value(self, value):
-#        self.register_subfields_view.cellChanged.disconnect(self.write_register_from_subfields_value)
-#        text = hex(value).upper().replace("X", "x")
-#        self.register_value_edit.setText(text)
-#        for field_info in self.field_infos:
-#            sub_value = (value & field_info.bit_mask) >> field_info.bit_shift
-#            item = self.register_subfields_view.item(field_info.row_idx, field_info.col_idx)
-#            if item==None:
-#                set_trace()
-#                pass
-#            text = hex(sub_value).upper().replace("X", "x")
-#            item.setText(text)
-#        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value)
-#
-#    def slot_register_update_clicked(self):
-#        value = self.model.read_register(self.register)
-#        if value!=None:
-#            self.slot_register_set_value(value)
-#        else:
-#            print("Read failed, investigate")
-#
-#    def slot_register_update_write(self):
-#        text = self.register_value_edit.text()
-#        write_value = int(text, 0)
-#        write_success = self.model.write_register(self.register, write_value)
-#        if not write_success:
-#            print("Write failed, investigate")
-#        if (write_success and (self.auto_read_mode.currentIndex()==0)):
-#            read_value = self.model.read_register(self.register)
-#            if read_value!=None:
-#                self.slot_register_set_value(read_value)
-#        else:
-#            # Display the previous write value to all places
-#            self.slot_register_set_value(write_value)
-#
-#    def write_register_from_subfields_value(self):
-#        self.register_subfields_view.cellChanged.disconnect(self.write_register_from_subfields_value)
-#        old_read_value = int(self.register_value_edit.text(), 0)
-#        new_write_value = 0x00
-#        new_read_value  = None
-#        valid_value = True
-#        write_success = None
-#        for field_info in self.field_infos:
-#            try:
-#                sub_value = int(self.register_subfields_view.item(field_info.row_idx, field_info.col_idx).text(), 0)
-#            except:
-#                valid_value = False
-#                break
-#            max_value = field_info.bit_mask >> field_info.bit_shift
-#            if sub_value > max_value:
-#                # Value greater than bit field for item
-#                valid_value = False
-#                break
-#            new_write_value = new_write_value | sub_value << field_info.bit_shift
-#        if valid_value:
-#            write_success = self.model.write_register(self.register, new_write_value)
-#            if write_success:
-#                new_read_value = self.model.read_register(self.register)
-#            else:
-#                print("Write failed, investigate")
-#        if new_read_value==None:
-#            new_read_value = old_read_value
-#        self.register_subfields_view.cellChanged.connect(self.write_register_from_subfields_value)
-#        self.slot_register_set_value(new_read_value)
-#
-class regbank_main_window_t(Ui_regbank_reader_main, QObject):
-    def __init__(self, tib_file=None):
-        super(regbank_main_window_t, self).__init__()
+view_field_t = namedtuple("view_field_t", ["col_name", "col_num"])
+field_info_t = namedtuple("field_info_t", ["row_idx", "col_idx", "bit_mask", "bit_shift"])
 
-    def slot_set_regbank_list(self, cur_idx, regbank_list):
-        self.regbank_selection.clear()
-        for regbank_name in regbank_list:
-            self.regbank_selection.addItem(regbank_name)
-        self.regbank_selection.setCurrentIndex(cur_idx)
+class register_table_t (QWidget, Ui_register_tab, QObject) :
+    # To store the columns and their spacing details
+    view_fields = [view_field_t("Subfield Name", 0), view_field_t("Field desc", 1),
+                   view_field_t("Value", 2), view_field_t("Default value", 3),
+                   view_field_t("General Description", 4)]
 
-    def slot_set_regbank_info(self, sheets_list, registers_list):
-        self.register_sheet_selection.currentIndexChanged.disconnect(self.slot_sheet_changed)
-        self.sheets = sheets_list
-        self.registers_list = registers_list
-        self.register_sheet_selection.clear()
-        for sheet in sheets_list:
-            self.register_sheet_selection.addItem(sheet)
-        self.register_sheet_selection.currentIndexChanged.connect(self.slot_sheet_changed)
-        self.slot_sheet_changed(0)
+    def __init__(self, register, parent, model):
+        super(register_table_t, self).__init__(parent)
+        self.setupUi(self)
+        self.show()
 
-    def slot_sheet_changed(self, sheet_idx):
-        self.register_selection.currentIndexChanged.disconnect(self.slot_register_changed)
-        if sheet_idx>=0:
-            registers = self.registers_list[sheet_idx]
-            self.register_selection.clear()
-            for register in registers:
-                self.register_selection.addItem(register)
-        self.register_selection.currentIndexChanged.connect(self.slot_register_changed)
-        self.slot_register_changed(0)
+        qDebug("register_table_t with register "+str(id(register)))
+        self.register = register
+        self.model = model
+        self.field_infos = []
+        self.comboBox_registerAutoReadMode.setEditable(True)
+        self.comboBox_registerAutoReadMode.lineEdit().setAlignment(Qt.AlignCenter)
+        self.comboBox_registerAutoReadMode.lineEdit().setReadOnly(True)
 
-    def slot_register_changed(self, idx):
-        if idx >=0:
-            register = self.model.get_register(self.regbank_selection.currentIndex(),
-                    self.register_sheet_selection.currentIndex(), idx)
-            qDebug("regbank_selection = {0}, sheet_index = {1}, register_idx = {2}".format( 
-                    self.regbank_selection.currentIndex(), self.register_sheet_selection.currentIndex(), 
-                    idx))
-            self.slot_update_register_tab(register)
+        self.tableWidget_subfieldsView.setRowCount(len(self.register.subfields))
+        self.tableWidget_subfieldsView.setColumnCount(len(self.view_fields))
+        self.tableWidget_subfieldsView.horizontalHeader().setResizeMode(QHeaderView.Stretch)
+        self.tableWidget_subfieldsView.verticalHeader().setResizeMode(QHeaderView.Stretch)
+        self.tableWidget_subfieldsView.verticalHeader().setVisible(False)
+        headerLabels = []
+        qDebug("tableWidget_subfieldsView items are set now")
+        row_idx = 0
+        for subfield_name in self.register.subfields.keys():
+            subfield = self.register.subfields[subfield_name]
+            view_field = self.view_fields[0]
+            headerLabels.append(view_field.col_name)
+            text = subfield.name
+            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
+            self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
 
-    def get_register_id(self, register):
-        text = (self.regbank_selection.currentText() + self.register_sheet_selection.currentText()
-                + register.name + str(register.offset_addr)
-                + str(len(register.sub_elements)))
-        return md5(text.encode()).hexdigest()
+            view_field = self.view_fields[1]
+            headerLabels.append(view_field.col_name)
+            start_bit = subfield.bit_position[0]
+            end_bit   = subfield.bit_position[-1]
+            field_info = field_info_t(row_idx=row_idx, col_idx=2, bit_mask=(pow(2, end_bit+1)-1)-(pow(2, start_bit)-1), bit_shift=start_bit)
+            self.field_infos.append(field_info)
+            text = str(subfield.bit_width) + " bits in " + str(subfield.bit_position) + " SW_ATTR[" + subfield.sw_attr + "]"
+            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
+            self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
 
-    def slot_update_register_tab(self, register):
-        print("Register bank selected")
-        addTabWidget = False
-        widget = register_widget = None
-        if self.registers_tab_widget.count()==0:
-            addTabWidget = True
+            view_field = self.view_fields[2]
+            headerLabels.append(view_field.col_name)
+            text = "--"
+            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
+            self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
+
+            view_field = self.view_fields[3]
+            headerLabels.append(view_field.col_name)
+            text = str(subfield.default_val)
+            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
+            self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
+
+            view_field = self.view_fields[4]
+            headerLabels.append(view_field.col_name)
+            text = subfield.description
+            item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
+            self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
+            row_idx += 1 
+        self.tableWidget_subfieldsView.setHorizontalHeaderLabels(headerLabels)
+        self.tableWidget_subfieldsView.cellChanged.connect(self.write_register_from_subfields_value)
+        self.pushButton_readValue.clicked.connect(self.slot_register_update_clicked)
+        self.lineEdit_registerValue.editingFinished.connect(self.slot_register_update_write)
+        self.slot_update_register_ui()
+
+    def slot_update_register_ui(self):
+        sheet = self.model.db[self.register.regbank_name][self.register.sheet_name]
+        register_addr = sheet.base_addr + self.register.offset_addr * (1 
+                if sheet.offset_type == offsets_enum_t.BYTE_OFFSETS else 4)
+        self.lineEdit_registerName.setText("{0} @ {1}".format(self.register.register_name, 
+            hex(register_addr)))
+        self.lineEdit_sheetBaseAddr.setText(hex(sheet.base_addr))
+        self.lineEdit_registerOffsetAddr.setText(str(self.register.offset_addr))
+        self.lineEdit_sheetOffsetType.setText("BYTE_OFFSETS" 
+                if sheet.offset_type == offsets_enum_t.BYTE_OFFSETS else 
+                "WORD_OFFSETS")
+
+    def slot_reset_register_ui(self, regbank_name, sheet_name):
+        if (self.register.regbank_name==regbank_name and
+                self.register.sheet_name==sheet_name):
+            self.lineEdit_registerValue.blockSignals(True)
+            self.lineEdit_registerValue.setText("")
+            self.lineEdit_registerValue.blockSignals(False)
+            row_idx = 0
+            self.tableWidget_subfieldsView.blockSignals(True)
+            for subfield_name in self.register.subfields.keys():
+                view_field = self.view_fields[2]
+                text = "--"
+                item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
+                self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
+                row_idx += 1
+            self.tableWidget_subfieldsView.blockSignals(False)
+            self.slot_update_register_ui()
+
+
+
+    def toHex(self, value):
+        return hex(value).upper().replace("X", "x")
+
+    def slot_register_set_value(self, value):
+        self.tableWidget_subfieldsView.cellChanged.disconnect(self.write_register_from_subfields_value)
+        text = hex(value).upper().replace("X", "x")
+        self.lineEdit_registerValue.setText(text)
+        for field_info in self.field_infos:
+            sub_value = (value & field_info.bit_mask) >> field_info.bit_shift
+            item = self.tableWidget_subfieldsView.item(field_info.row_idx, field_info.col_idx)
+            if item==None:
+                set_trace()
+                pass
+            text = hex(sub_value).upper().replace("X", "x")
+            item.setText(text)
+        self.tableWidget_subfieldsView.cellChanged.connect(self.write_register_from_subfields_value)
+
+    def slot_register_update_clicked(self):
+        value = self.model.read_register(self.register.regbank_name, 
+                                         self.register.sheet_name, 
+                                         self.register.register_name, None)
+        if value!=None:
+            self.slot_register_set_value(value)
         else:
-            if self.get_register_id(register) in self.register_tabs.keys():
-                # Register already exists, put the tab to highlight
-                (register_widget, _) = self.register_tabs[self.get_register_id(register)]
-                idx = self.registers_tab_widget.indexOf(register_widget)
-                self.registers_tab_widget.setCurrentIndex(idx)
-            else:
-                addTabWidget = True
+            print("Read failed, investigate")
 
-        if addTabWidget:
-            register_widget = register_table_t(register, self.registers_tab_widget, self.model)
-            self.registers_tab_widget.addTab(register_widget, register.name)
-            self.register_tabs[self.get_register_id(register)] = (register_widget, register)
-            idx = self.registers_tab_widget.indexOf(register_widget)
-            self.registers_tab_widget.setCurrentIndex(idx)
+    def slot_register_update_write(self):
+        text = self.lineEdit_registerValue.text()
+        write_value = int(text, 0)
+        self.model.write_register(self.register.regbank_name,
+                                  self.register.sheet_name,
+                                  self.register.register_name, None, write_value)
+        if (self.auto_read_mode.currentIndex()==0):
+            read_value = self.model.read_register(self.register.regbank_name, 
+                                                  self.register.sheet_name, 
+                                                  self.register.register_name, None)
+            if read_value!=None:
+                self.slot_register_set_value(read_value)
+        else:
+            # Display the previous write value to all places
+            self.slot_register_set_value(write_value)
 
-    def slot_regbank_button_clicked(self):
-        if self.model.target_connected==False:
-            msgBox = QMessageBox()
-            msgBox.setText("Target not connected, please connect")
-            msgBox.exec()
-            return
-        fdialog = QFileDialog(None)
-        fname = fdialog.getOpenFileName(None, 'Open file'); 
-        regbank_name = splitext(basename(fname))[0]
-        additional_info = self.get_regbank_additional_info(regbank_name)
-        self.model.load_regbank_file(fname)
-        self.model.update_regbank_additional_info(additional_info)
-        
-    
-    def get_regbank_additional_info(self, regbank_name):
-        dialog = QDialog(None)
-        label_text = "Enter base address and offset size for "+regbank_name
-        regbank_dialog = Ui_Dialog()
-        regbank_dialog.setupUi(dialog)
-        regbank_dialog.accept_button.clicked.connect(dialog.accept)
-        regbank_dialog.main_label.setText(label_text)
-        base_addr = 0x00
-        offset_size = 0x00
-        while 1:
-            dialog.show()
-            dialog.exec()
-            base_addr = int(regbank_dialog.base_addr.text(), 0)
-            offset_size = 1 if regbank_dialog.addr_offset_type.currentIndex()==0 else 4
-            if (base_addr==0 or offset_size==0) :
-                continue
-            else:
+    def write_register_from_subfields_value(self):
+        self.tableWidget_subfieldsView.cellChanged.disconnect(self.write_register_from_subfields_value)
+        try:
+            old_read_value = int(self.lineEdit_registerValue.text(), 0)
+        except:
+            set_trace()
+            pass
+        new_write_value = 0x00
+        new_read_value  = None
+        valid_value = True
+        write_success = None
+        for field_info in self.field_infos:
+            try:
+                sub_value = int(self.tableWidget_subfieldsView.item(field_info.row_idx, field_info.col_idx).text(), 0)
+            except:
+                valid_value = False
                 break
-        info = regbank_additional_info_t(regbank_name, base_addr, offset_size)
-        return info
+            max_value = field_info.bit_mask >> field_info.bit_shift
+            if sub_value > max_value:
+                # Value greater than bit field for item
+                valid_value = False
+                break
+            new_write_value = new_write_value | sub_value << field_info.bit_shift
+        if valid_value:
+            write_success = self.model.write_register(self.register, new_write_value)
+            if write_success:
+                new_read_value = self.model.read_register(self.register)
+            else:
+                print("Write failed, investigate")
+        if new_read_value==None:
+            new_read_value = old_read_value
+        self.tableWidget_subfieldsView.cellChanged.connect(self.write_register_from_subfields_value)
+        self.slot_register_set_value(new_read_value)
 
 ## Glue logic between UI and Model
-class regbank_reader_gui_controller_t:
+class regbank_reader_gui_controller_t(QObject):
+
+    signal_reset_sheet_register = pyqtSignal(str, str)
+
     def __init__(self, tib_file):
+        super(regbank_reader_gui_controller_t, self).__init__()
         self.init_tib_file = tib_file
 
     def initialize(self, tib_file = None):
@@ -300,7 +214,7 @@ class regbank_reader_gui_controller_t:
         self.model.tib_file = tib_file
         
         self.window = QMainWindow()
-        self.gui = regbank_main_window_t()
+        self.gui = Ui_regbank_reader_main()
         self.gui.setupUi(self.window)
         self.window.show()
 
@@ -329,7 +243,32 @@ class regbank_reader_gui_controller_t:
         self.gui.pushButton_loadSheet.clicked.connect(self.slot_gui_load_sheet)
         self.gui.comboBox_regbankSelect.currentIndexChanged.connect(self.slot_gui_regbank_changed)
         self.gui.comboBox_sheetSelect.currentIndexChanged.connect(self.slot_gui_regbank_sheet_changed)
+        self.gui.comboBox_loadedSheetOffsetSel.addItem("BYTE_OFFSETS")
+        self.gui.comboBox_loadedSheetOffsetSel.addItem("WORD_OFFSETS")
+        self.gui.lineEdit_loadedCalcAddr.setReadOnly(True)
+        self.gui.lineEdit_loadedSheetAddr.editingFinished.connect(self.slot_gui_regbank_sheet_base_addr_changed)
+        self.gui.comboBox_loadedSheetOffsetSel.currentIndexChanged.connect(self.slot_gui_regbank_sheet_offsets_changed)
         
+        # Memory Editor Section
+        self.memory_radioButtons = dict()
+        self.gui.pushButton_getCurrRegisterAddr.setEnabled(False)
+        self.gui.pushButton_memEditorReadValue.setEnabled(False)
+        self.gui.pushButton_memEditorWriteValue.setEnabled(False)
+        self.gui.comboBox_memEditorMode.setEnabled(False)
+        for i in range(32):
+            radioButton = getattr(self.gui, "radioButton_" + str(i))
+            radioButton.toggled.connect(self.slot_gui_memEditor_memory_radioButton_changed)
+            self.memory_radioButtons[i] = radioButton
+        self.gui.lineEdit_memEditorAddr.setText("---")
+        self.gui.lineEdit_memEditorNextValue.setText("---")
+        self.gui.lineEdit_memEditorCurrValue.setText("---")
+        self.gui.comboBox_memEditorMode.currentIndexChanged.connect(self.slot_gui_memEditor_modeChanged)
+        self.gui.pushButton_getCurrRegisterAddr.clicked.connect(self.slot_gui_memEditor_getCurrRegisterAddr)
+        self.gui.pushButton_memEditorReadValue.clicked.connect(self.slot_gui_memEditor_readValue)
+        self.gui.pushButton_memEditorWriteValue.clicked.connect(self.slot_gui_memEditor_writeValue)
+        self.gui.lineEdit_memEditorAddr.editingFinished.connect(self.slot_gui_memEditor_regAddrChanged)
+        self.gui.lineEdit_memEditorNextValue.editingFinished.connect(self.slot_gui_memEditor_nextValueChanged)
+
 
         # TIB Initialization Section
         self.gui.pushButton_loadTibFile.setEnabled(False)
@@ -339,15 +278,28 @@ class regbank_reader_gui_controller_t:
         self.gui.comboBox_tibList.lineEdit().setReadOnly(True)
         self.gui.pushButton_executeTib.setEnabled(False)
         self.gui.pushButton_executeTib.clicked.connect(self.slot_gui_execute_tib)
+        self.gui.lineEdit_execTibCommand.cursorPositionChanged.connect(self.slot_gui_execute_tib_command_cursor_changed)
+        self.gui.lineEdit_execTibCommand.returnPressed.connect(self.slot_gui_execute_tib_command)
 
         # Register access Section
 
         # TIB Processor section
+        self.model.signal_tib_exec_op.connect(self.slot_gui_display_tib_op)
+        self.gui.plainTextEdit_tibOutput.setCenterOnScroll(True)
+        self.gui.pushButton_clearTibOutputs.clicked.connect(self.gui.plainTextEdit_tibOutput.clear)
  
         # Connect slots related to targets
         self.model.signal_target_connected.connect(self.slot_gui_target_connected)
         self.model.signal_target_disconnected.connect(self.slot_gui_target_disconnected)
         self.model.signal_targets_list_updated.connect(self.slot_gui_targets_list_updated)
+        
+        # Connect slots related to model
+        self.model.signal_regbank_updated.connect(self.slot_gui_regbank_updated)
+
+        # Connect slots related to gui updates
+        self.gui.comboBox_loadedRegbankSel.currentIndexChanged.connect(self.slot_gui_regbank_selection_changed)
+        self.gui.comboBox_loadedSheetSel.currentIndexChanged.connect(self.slot_gui_regbank_selection_changed)
+        self.gui.comboBox_loadedRegisterSel.currentIndexChanged.connect(self.slot_gui_regbank_selection_changed)
 
         # Start the model
         regbank_reader_model.initialize()
@@ -386,6 +338,13 @@ class regbank_reader_gui_controller_t:
         self.gui.pushButton_loadRegBank.setEnabled(True)
         self.gui.pushButton_loadSheet.setEnabled(True)
         self.gui.pushButton_loadTibFile.setEnabled(True)
+
+        self.gui.pushButton_getCurrRegisterAddr.setEnabled(True)
+        self.gui.pushButton_memEditorReadValue.setEnabled(True)
+        self.gui.pushButton_memEditorWriteValue.setEnabled(True)
+        self.gui.comboBox_memEditorMode.setEnabled(True)
+
+
         self.gui.pushButton_targetConnect.setText("Click to disconnect")
         self.gui.comboBox_targetsList.setEnabled(False)
 
@@ -393,6 +352,12 @@ class regbank_reader_gui_controller_t:
         self.gui.pushButton_loadRegBank.setEnabled(False)
         self.gui.pushButton_loadSheet.setEnabled(False)
         self.gui.pushButton_loadTibFile.setEnabled(False)
+
+        self.gui.pushButton_getCurrRegisterAddr.setEnabled(False)
+        self.gui.pushButton_memEditorReadValue.setEnabled(False)
+        self.gui.pushButton_memEditorWriteValue.setEnabled(False)
+        self.gui.comboBox_memEditorMode.setEnabled(False)
+
         self.gui.pushButton_targetConnect.setText("Click to connect")
         self.gui.comboBox_targetsList.setEnabled(True)
 
@@ -454,6 +419,85 @@ class regbank_reader_gui_controller_t:
         for sheet_name in sheet_names:
             self.gui.comboBox_sheetSelect.addItem(sheet_name)
 
+    # Memory editor related slots
+    def slot_gui_memEditor_update_value(self, value):
+        self.gui.lineEdit_memEditorNextValue.blockSignals(True)
+        self.gui.lineEdit_memEditorNextValue.setText(hex(value))
+        self.gui.lineEdit_memEditorNextValue.blockSignals(False)
+        self.slot_gui_memEditor_radioBtnsSetValue(value)
+
+    def slot_gui_memEditor_radioBtnsGetValue(self):
+        value = 0
+        for i in self.memory_radioButtons.keys():
+            if self.memory_radioButtons[i].isChecked():
+                value |= (1 << i)
+        return value
+            
+    def slot_gui_memEditor_radioBtnsSetValue(self, value):
+        for i in self.memory_radioButtons.keys():
+            self.memory_radioButtons[i].blockSignals(True)
+            if value & (1 << i):
+                self.memory_radioButtons[i].setChecked(True)
+            else:
+                self.memory_radioButtons[i].setChecked(False)
+            self.memory_radioButtons[i].blockSignals(False)
+
+    def slot_gui_memEditor_memory_radioButton_changed(self):
+        value = self.slot_gui_memEditor_radioBtnsGetValue()
+        self.slot_gui_memEditor_update_value(value)
+        if self.gui.comboBox_memEditorMode.currentIndex()==1:
+            # Live mode
+            self.slot_gui_memEditor_writeValue()
+            self.slot_gui_memEditor_readValue()
+        else:
+            # On demand mode
+            pass
+ 
+    def slot_gui_memEditor_modeChanged(self):
+        if self.gui.comboBox_memEditorMode.currentIndex()==1:
+            # Update current value if Live Mode is selected
+            value = self.slot_gui_memEditor_readValue()
+    
+    def slot_gui_memEditor_nextValueChanged(self):
+        value = int(self.gui.lineEdit_memEditorNextValue.text(), 0)
+        self.slot_gui_memEditor_update_value(value)
+        if self.gui.comboBox_memEditorMode.currentIndex()==1:
+            # Write current value and read back in Live Mode
+            self.slot_gui_memEditor_writeValue()
+            self.slot_gui_memEditor_readValue()
+ 
+
+    def slot_gui_memEditor_regAddrChanged(self):
+        if self.gui.comboBox_memEditorMode.currentIndex()==1:
+            # Read and update value in Live Mode
+            self.slot_gui_memEditor_readValue()
+        else:
+            self.slot_gui_memEditor_update_value(0)
+
+    def slot_gui_memEditor_getCurrRegisterAddr(self):
+        try:
+            regbank_name = self.gui.comboBox_loadedRegbankSel.currentText()
+            sheet_name = self.gui.comboBox_loadedSheetSel.currentText()
+            register_name = self.gui.comboBox_loadedRegisterSel.currentText()
+            sheet = self.model.db[regbank_name][sheet_name]
+            register = sheet.registers[register_name]
+            addr = sheet.base_addr + (register.offset_addr *
+                    (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4))
+            self.gui.lineEdit_memEditorAddr.setText(hex(addr))
+        except:
+            pass
+
+    def slot_gui_memEditor_readValue(self):
+        addr = int(self.gui.lineEdit_memEditorAddr.text(), 0)
+        value = self.model.read_address(addr)
+        self.slot_gui_memEditor_update_value(value)
+
+    def slot_gui_memEditor_writeValue(self):
+        addr = int(self.gui.lineEdit_memEditorAddr.text(), 0)
+        value = int(self.gui.lineEdit_memEditorNextValue.text(), 0)
+        self.model.write_address(addr, value)
+        self.gui.lineEdit_memEditorCurrValue.setText(hex(value))
+
     # TIB related slots
     def slot_gui_load_tib_file(self):
         fdialog = QFileDialog(None)
@@ -467,11 +511,139 @@ class regbank_reader_gui_controller_t:
                 self.gui.comboBox_tibList.addItem(tib_name)
 
     def slot_gui_execute_tib(self):
-        set_trace()
         tib_name = self.gui.comboBox_tibList.currentText()
         tib_file = self.tibs_list[tib_name]
         self.model.tib_file = tib_file
         parse_tib_file(tib_file)
+
+    def slot_gui_execute_tib_command(self):
+        tib = self.gui.lineEdit_execTibCommand.text()
+        try:
+            exec_tib(tib[3:])
+            self.gui.lineEdit_execTibCommand.clear()
+        except:
+            set_trace()
+            pass
+
+    def slot_gui_execute_tib_command_cursor_changed(self, old, new):
+        if new < 3:
+            self.gui.lineEdit_execTibCommand.setText(">>>")
+
+    def slot_gui_display_tib_op(self, ops):
+        for op in ops:
+            self.gui.plainTextEdit_tibOutput.appendPlainText(op)
+
+    # Regbank related slots
+
+    def slot_gui_regbank_sheet_base_addr_changed(self):
+        regbank_name = self.gui.comboBox_loadedRegbankSel.currentText()
+        sheet_name   = self.gui.comboBox_loadedSheetSel.currentText()
+        orig_base_addr = self.model.db[regbank_name][sheet_name].base_addr
+        try:
+            base_addr = int(self.gui.lineEdit_loadedSheetAddr.text(), 0)
+            if base_addr==orig_base_addr:
+                return 
+            self.model.db[regbank_name][sheet_name].base_addr = base_addr
+        except:
+            self.gui.lineEdit_loadedSheetAddr.setText(hex(orig_base_addr))
+        self.slot_gui_update_register_ui()
+        self.signal_reset_sheet_register.emit(regbank_name, sheet_name)
+
+    def slot_gui_regbank_sheet_offsets_changed(self, offset_idx):
+        regbank_name = self.gui.comboBox_loadedRegbankSel.currentText()
+        sheet_name   = self.gui.comboBox_loadedSheetSel.currentText()
+        cur_idx = self.gui.comboBox_loadedSheetOffsetSel.currentIndex()
+        self.model.db[regbank_name][sheet_name].offset_type = (
+                offsets_enum_t.BYTE_OFFSETS if cur_idx==0 else 
+                offsets_enum_t.WORD_OFFSETS)
+        self.slot_gui_update_register_ui()
+        self.signal_reset_sheet_register.emit(regbank_name, sheet_name)
+
+    def slot_gui_regbank_updated(self):
+        self.gui.comboBox_loadedRegbankSel.blockSignals(True)
+        for regbank_name in self.model.db.keys():
+            if self.gui.comboBox_loadedRegbankSel.findText(regbank_name) < 0:
+                self.gui.comboBox_loadedRegbankSel.addItem(regbank_name)
+        self.gui.comboBox_loadedRegbankSel.blockSignals(False)
+        self.gui.comboBox_loadedRegbankSel.currentIndexChanged.emit(
+                self.gui.comboBox_loadedRegbankSel.currentIndex())
+        
+    def slot_gui_regbank_selection_changed(self):
+        self.gui.comboBox_loadedRegbankSel.blockSignals(True)
+        self.gui.comboBox_loadedSheetSel.blockSignals(True)
+        self.gui.comboBox_loadedRegisterSel.blockSignals(True)
+
+        regbank_name = self.gui.comboBox_loadedRegbankSel.currentText()
+        if self.sender()==self.gui.comboBox_loadedRegbankSel:
+            # Regbank selection changed, update sheets and registers
+            self.gui.comboBox_loadedSheetSel.clear()
+            for sheet_name in self.model.db[regbank_name].keys():
+                if self.model.db[regbank_name][sheet_name]:
+                    self.gui.comboBox_loadedSheetSel.addItem(sheet_name)
+            sheet_name = self.gui.comboBox_loadedSheetSel.currentText()
+            self.gui.comboBox_loadedRegisterSel.clear()
+            for register_name in self.model.db[regbank_name][sheet_name].registers.keys():
+                self.gui.comboBox_loadedRegisterSel.addItem(register_name)
+        elif self.sender()==self.gui.comboBox_loadedSheetSel:
+            # Sheet selection changed
+            sheet_name = self.gui.comboBox_loadedSheetSel.currentText()
+            self.gui.comboBox_loadedRegisterSel.clear()
+            for register_name in self.model.db[regbank_name][sheet_name].registers.keys():
+                self.gui.comboBox_loadedRegisterSel.addItem(register_name)
+        elif self.sender()==self.gui.comboBox_loadedRegisterSel:
+            # Register selection changed
+            pass
+        else:
+            assert 0, "Invalid condition"
+        self.gui.comboBox_loadedRegbankSel.blockSignals(False)
+        self.gui.comboBox_loadedSheetSel.blockSignals(False)
+        self.gui.comboBox_loadedRegisterSel.blockSignals(False)
+        self.slot_gui_update_register_ui()
+    
+    def slot_get_register_id(self):
+        text = (self.gui.comboBox_loadedRegbankSel.currentText() + 
+                self.gui.comboBox_loadedSheetSel.currentText() + 
+                self.gui.comboBox_loadedRegisterSel.currentText())
+        return md5(text.encode()).hexdigest()
+
+    def slot_gui_update_register_ui(self):
+        addTabWidget = False
+        widget = register_widget = None
+        regbank_name  = self.gui.comboBox_loadedRegbankSel.currentText()
+        sheet_name    = self.gui.comboBox_loadedSheetSel.currentText()
+        register_name = self.gui.comboBox_loadedRegisterSel.currentText()
+
+        sheet = self.model.db[regbank_name][sheet_name]
+        self.gui.lineEdit_loadedSheetAddr.setText(hex(sheet.base_addr))
+        self.gui.lineEdit_loadedCalcAddr.setText(hex(sheet.base_addr + 
+                sheet.registers[register_name].offset_addr * (1 
+                    if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)))
+        self.gui.comboBox_loadedSheetOffsetSel.setCurrentIndex(
+                0 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 1)
+
+        if self.gui.tabWidget_registers.count()==0:
+            addTabWidget = True
+        else:
+            if self.slot_get_register_id() in self.register_tabs.keys():
+                # Register already exists, put the tab to highlight
+                register_widget = self.register_tabs[self.slot_get_register_id()]
+                idx = self.gui.tabWidget_registers.indexOf(register_widget)
+                self.gui.tabWidget_registers.setCurrentIndex(idx)
+            else:
+                addTabWidget = True
+
+        if addTabWidget:
+            register  = sheet.registers[register_name]
+            base_addr = sheet.base_addr
+            offset_type = sheet.offset_type
+            register_widget = register_table_t(register, self.gui.tabWidget_registers, 
+                    self.model)
+            self.signal_reset_sheet_register.connect(register_widget.slot_reset_register_ui)
+            self.gui.tabWidget_registers.addTab(register_widget, 
+                    "{0}:{1}".format(sheet_name, register_name))
+            self.register_tabs[self.slot_get_register_id()] = register_widget
+            idx = self.gui.tabWidget_registers.indexOf(register_widget)
+            self.gui.tabWidget_registers.setCurrentIndex(idx)
 
     def start(self):
         pass

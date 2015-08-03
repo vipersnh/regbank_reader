@@ -13,8 +13,8 @@ class offsets_enum_t(enumeration.Enum):
 
 subfield_t      = StructDict("subfield_t", ["name", "bit_width", "bit_position", "sw_attr", 
                                             "hw_attr", "default_val", "description", "value"])
-register_t      = StructDict("register_t", ["offset_addr", "subfields", "value"])
-sheet_t         = StructDict("sheet_t",    ["base_addr","mmap_done", "start_addr", "end_addr", "offset_type", "registers"])
+register_t      = StructDict("register_t", ["regbank_name", "sheet_name", "register_name", "offset_addr", "subfields", "value"])
+sheet_t         = StructDict("sheet_t",    ["regbank_name", "sheet_name", "base_addr","mmap_done", "start_addr", "end_addr", "offset_type", "registers"])
 ## Register Access from  db
 #  db["regbank"]["sheet"]["register"] = 
 db              = OrderedDict()
@@ -175,6 +175,8 @@ def regbank_load_sheet(regbank_name, sheet_name,
             set_trace()
         sheet_name = as_sheet_name
     db[regbank_name][sheet_name] = sheet_t()
+    db[regbank_name][sheet_name].regbank_name = regbank_name
+    db[regbank_name][sheet_name].sheet_name = sheet_name
     db[regbank_name][sheet_name].base_addr = base_addr
     db[regbank_name][sheet_name].registers = OrderedDict()
     while 1:
@@ -188,6 +190,9 @@ def regbank_load_sheet(regbank_name, sheet_name,
             row_idx += 1
         [register_name, register] = regbank_decode_register(rows)
         if register:
+            register.regbank_name = regbank_name
+            register.sheet_name = sheet_name
+            register.register_name = register_name
             db[regbank_name][sheet_name].registers[register_name] = register
         if row_idx>=xl_sheet.nrows :
             break

@@ -58,7 +58,7 @@
         </layout>
        </item>
        <item row="0" column="1">
-        <widget class="QLineEdit" name="register_name_disp">
+        <widget class="QLineEdit" name="lineEdit_registerName">
          <property name="minimumSize">
           <size>
            <width>181</width>
@@ -74,7 +74,7 @@
         </widget>
        </item>
        <item row="1" column="0">
-        <widget class="QPushButton" name="register_update_button">
+        <widget class="QPushButton" name="pushButton_readValue">
          <property name="minimumSize">
           <size>
            <width>121</width>
@@ -87,7 +87,7 @@
         </widget>
        </item>
        <item row="1" column="1">
-        <widget class="QLineEdit" name="register_value_edit">
+        <widget class="QLineEdit" name="lineEdit_registerValue">
          <property name="minimumSize">
           <size>
            <width>181</width>
@@ -114,7 +114,7 @@
         </layout>
        </item>
        <item row="2" column="1">
-        <widget class="QComboBox" name="auto_read_mode">
+        <widget class="QComboBox" name="comboBox_registerAutoReadMode">
          <property name="minimumSize">
           <size>
            <width>161</width>
@@ -156,7 +156,7 @@
         </layout>
        </item>
        <item row="0" column="1">
-        <widget class="QLineEdit" name="base_addr_edit">
+        <widget class="QLineEdit" name="lineEdit_sheetBaseAddr">
          <property name="minimumSize">
           <size>
            <width>161</width>
@@ -165,6 +165,9 @@
          </property>
          <property name="alignment">
           <set>Qt::AlignCenter</set>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
          </property>
         </widget>
        </item>
@@ -190,28 +193,8 @@
          </item>
         </layout>
        </item>
-       <item row="2" column="1">
-        <widget class="QComboBox" name="addr_offset_type">
-         <property name="minimumSize">
-          <size>
-           <width>161</width>
-           <height>31</height>
-          </size>
-         </property>
-         <item>
-          <property name="text">
-           <string>Byte Offset</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>Word Offset</string>
-          </property>
-         </item>
-        </widget>
-       </item>
        <item row="1" column="1">
-        <widget class="QLineEdit" name="offset_addr_edit">
+        <widget class="QLineEdit" name="lineEdit_registerOffsetAddr">
          <property name="minimumSize">
           <size>
            <width>161</width>
@@ -220,6 +203,25 @@
          </property>
          <property name="alignment">
           <set>Qt::AlignCenter</set>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QLineEdit" name="lineEdit_sheetOffsetType">
+         <property name="minimumSize">
+          <size>
+           <width>161</width>
+           <height>31</height>
+          </size>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
          </property>
         </widget>
        </item>
@@ -235,37 +237,11 @@
     </widget>
    </item>
    <item>
-    <widget class="QTableWidget" name="register_subfields_view"/>
+    <widget class="QTableWidget" name="tableWidget_subfieldsView"/>
    </item>
   </layout>
-  <zorder>register_subfields_view</zorder>
-  <zorder>label_2</zorder>
-  <zorder>register_update_button</zorder>
-  <zorder>horizontalSpacer_7</zorder>
-  <zorder>label_4</zorder>
-  <zorder>addr_offset_type</zorder>
-  <zorder>register_value_edit</zorder>
-  <zorder>horizontalSpacer</zorder>
-  <zorder>horizontalSpacer_2</zorder>
-  <zorder>horizontalSpacer_3</zorder>
-  <zorder>horizontalSpacer</zorder>
-  <zorder>horizontalSpacer</zorder>
-  <zorder>horizontalSpacer_2</zorder>
-  <zorder>horizontalSpacer_3</zorder>
-  <zorder>horizontalSpacer_4</zorder>
-  <zorder>line</zorder>
+  <zorder>tableWidget_subfieldsView</zorder>
   <zorder>line_2</zorder>
-  <zorder>register_value_edit</zorder>
-  <zorder>horizontalSpacer_2</zorder>
-  <zorder>auto_read_mode</zorder>
-  <zorder>label_5</zorder>
-  <zorder>label</zorder>
-  <zorder>horizontalSpacer</zorder>
-  <zorder>horizontalSpacer_2</zorder>
-  <zorder>horizontalSpacer_2</zorder>
-  <zorder>horizontalSpacer_3</zorder>
-  <zorder>horizontalSpacer_4</zorder>
-  <zorder>horizontalSpacer_5</zorder>
  </widget>
  <resources/>
  <connections/>
