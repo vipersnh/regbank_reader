@@ -59,11 +59,14 @@ def regbank_decode_register(rows) :
         else:
             [start] = re.findall("\d+", subfield.bit_position)
             end = start
-        start = int(start); end = int(end)
+        start = int(start, 0); end = int(end, 0)
         subfield.bit_position = list(range(start, end+1))
         subfield.sw_attr = sw_attr
         subfield.hw_attr = hw_attr
-        subfield.default_val = int(row[regbank_info["default_value_col"]].value)
+        try:
+            subfield.default_val = int(row[regbank_info["default_value_col"]].value, 0)
+        except:
+            subfield.default_val = ""
         subfield.description = description = row[regbank_info["description_col"]].value
         if re.search(regbank_info["reserved_keyword"], subfield_name, re.IGNORECASE):
             subfield_name = regbank_info["reserved_keyword"] + str(reserved_idx)
@@ -154,8 +157,11 @@ def regbank_load_sheet(regbank_name, sheet_name,
     except:
         set_trace()
         pass
-    assert sheet_name in workbook.sheet_names(), \
-            "Loaded regbank doesnt contain sheet specified"
+    try:
+        assert sheet_name in workbook.sheet_names(), \
+                "Loaded regbank doesnt contain sheet specified"
+    except:
+        set_trace()
     xl_sheet = workbook.sheet_by_name(sheet_name)
     row_idx = 0
     while row_idx < xl_sheet.nrows:

@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file './client/widgets/regbank_reader_main.ui'
 #
-# Created: Mon Aug  3 23:15:41 2015
+# Created: Tue Aug  4 00:04:35 2015
 #      by: PyQt4 UI code generator 4.9.1
 #
 # WARNING! All changes made in this file will be lost!
@@ -625,7 +625,7 @@ class Ui_regbank_reader_main(object):
         self.menubar.addAction(self.menuHelp.menuAction())
 
         self.retranslateUi(regbank_reader_main)
-        self.mainTabWidget.setCurrentIndex(2)
+        self.mainTabWidget.setCurrentIndex(0)
         self.tabWidget_registers.setCurrentIndex(-1)
         QtCore.QMetaObject.connectSlotsByName(regbank_reader_main)
 
