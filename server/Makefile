@@ -5,20 +5,20 @@ X86_M32_CC 		:= 	gcc
 X86_M32_CXX 	:= 	g++
 X86_M32_LINK 	:= 	g++
 X86_M32_CFLAGS  := -Wall -g -pthread -m32
-X86_M32_CXXFLAGS  := -Wall -g -pthread -DPLATFORM=HOST
+X86_M32_CXXFLAGS  := -Wall -g -pthread -m32 -DPLATFORM=HOST
 X86_M32_INC	    := $(SERVER_INC)
 X86_M32_CSRCS   := 
 X86_M32_CXXSRCS := $(SERVER_CXX_SRCS)
-X86_M32_LDFLAGS := -lpthread
+X86_M32_LDFLAGS := -lpthread -m32
 X86_M32_TARGET  :=  server.exe
 
 
 
-ARM_M32_CC 		:= 	arm-linux-gnueabi-gcc
-ARM_M32_CXX 	:= 	arm-linux-gnueabi-gcc
-ARM_M32_LINK 	:= 	arm-linux-gnueabi-gcc
+ARM_M32_CC 		:= 	arm-none-linux-gnueabi-gcc
+ARM_M32_CXX 	:= 	arm-none-linux-gnueabi-g++
+ARM_M32_LINK 	:= 	arm-none-linux-gnueabi-g++
 ARM_M32_CFLAGS  :=  
-ARM_M32_CXXFLAGS:= -Wall -ggdb3 -pthread -march=armv7-a -mfloat-abi=softfp
+ARM_M32_CXXFLAGS:= -Wall -ggdb3 -pthread -march=armv7-a -mfloat-abi=softfp -DPLATFORM=TARGET
 ARM_M32_INC	    := $(SERVER_INC)
 ARM_M32_CSRCS   := 
 ARM_M32_CXXSRCS := $(SERVER_CXX_SRCS)

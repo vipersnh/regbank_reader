@@ -99,32 +99,12 @@ class regbank_reader_model_t (QObject):
         self.client.disconnect_server()
         self.signal_target_disconnected.emit()
 
-    def create_mem_map(self, regbank_name, sheet_name):
-        sheet = self.db[regbank_name][sheet_name]
-        start_addr = sheet.start_addr
-        end_addr   = sheet.end_addr
-        msg_mmap_init = msg_req_t()
-        msg_mmap_init.handle = id(start_addr)+id(end_addr)
-        msg_mmap_init.req_type = MEM_MAP_SPACE_REQ
-        msg_mmap_init.start_addr = start_addr
-        msg_mmap_init.end_addr   = end_addr
-        resp = self.client.query_server(msg_mmap_init)
-        if resp.status==STATUS_OK:
-            return True
-        else:
-            return False
-        
-
-
-    def read_address(self, address, dynamic_mmap=True):
+    def read_address(self, address):
         if __debug__:
             return 0xABCDEFAB
         msg_read = msg_req_t()
         msg_read.handle = id(address)
-        if dynamic_mmap:
-            msg_read.req_type = WORD_READ_REQ_UNMAPPED
-        else:
-            msg_read.req_type = WORD_READ_REQ
+        msg_read.req_type = WORD_READ_REQ
         msg_read.addr = address
         resp = self.client.query_server(msg_read)
         assert(resp.handle==msg_read.handle)
@@ -136,15 +116,12 @@ class regbank_reader_model_t (QObject):
             pass
             return None;       # Read failed
 
-    def write_address(self, address, value, dynamic_mmap=True):
+    def write_address(self, address, value):
         if __debug__:
             return True
         msg_write = msg_req_t()
         msg_write.handle = id(address)
-        if dynamic_mmap:
-            msg_write.req_type = WORD_WRITE_REQ_UNMAPPED
-        else:
-            msg_write.req_type = WORD_WRITE_REQ
+        msg_write.req_type = WORD_WRITE_REQ
         msg_write.addr = address
         msg_write.value = value
         resp = self.client.query_server(msg_write)
@@ -172,7 +149,7 @@ class regbank_reader_model_t (QObject):
             register = sheet.registers[register_name]
             addr = sheet.base_addr + register.offset_addr * \
                     (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)
-            read_value = self.read_address(addr, dynamic_mmap=False)
+            read_value = self.read_address(addr)
             if subfield_name:
                 subfield = register.subfields[subfield_name]
                 bitfield = get_bitfield_spec(subfield.bit_position[0], subfield.bit_position[-1])
@@ -195,7 +172,7 @@ class regbank_reader_model_t (QObject):
                 read_value &= bitfield.mask
                 assert (write_value <= bitfield.value), "Number given is larger than bitfield specification"
                 write_value = read_value | (write_value << bitfield.rshift)
-            self.write_address(addr, write_value, dynamic_mmap=False)
+            return self.write_address(addr, write_value)
         except:
             set_trace()
             pass
@@ -399,9 +376,6 @@ def parse_tib(tib, tib_file):
         # MMAP the sheet space
         assert self.target_connected, "Target must be connected to load regbank sheets"
         sheet = self.db[regbank_name][as_sheet]
-        success = self.create_mem_map(sheet.start_addr, sheet.end_addr)
-        if not success:
-            assert 0, "MMAP failed on server side"
         return
 
     if re.search(" *^unload_sheet", tib):
@@ -486,7 +460,6 @@ def load_sheet(regbank_sheet, base_addr, offset_size, as_sheet=None):
                 model.db[regbank_name][as_sheet if as_sheet else sheet_name])
         assert predicted_offset_type==offset_type, "Predicted offset type" \
             "different from given offset type"
-        model.create_mem_map(regbank_name, as_sheet if as_sheet else sheet_name)
         model.signal_regbank_updated.emit()
 
 

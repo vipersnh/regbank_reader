@@ -2,7 +2,7 @@ import xlrd
 import sys
 import re
 from StructDict import StructDict
-from regbank_parser import offsets_enum_t
+from regbank_parser import offsets_enum_t, is_regbank_sheet_valid
 from hashlib import md5
 from os.path import basename, splitext
 from PyQt4.QtCore import pyqtRemoveInputHook, pyqtSignal, QThread, Qt, qDebug, QObject
@@ -150,7 +150,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         self.model.write_register(self.register.regbank_name,
                                   self.register.sheet_name,
                                   self.register.register_name, None, write_value)
-        if (self.auto_read_mode.currentIndex()==0):
+        if (self.comboBox_registerAutoReadMode.currentIndex()==0):
             read_value = self.model.read_register(self.register.regbank_name, 
                                                   self.register.sheet_name, 
                                                   self.register.register_name, None)
@@ -184,9 +184,13 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
                 break
             new_write_value = new_write_value | sub_value << field_info.bit_shift
         if valid_value:
-            write_success = self.model.write_register(self.register, new_write_value)
+            write_success = self.model.write_register(self.register.regbank_name,
+                                                      self.register.sheet_name,
+                                                      self.register.register_name, None, new_write_value)
             if write_success:
-                new_read_value = self.model.read_register(self.register)
+                new_read_value = self.model.read_register(self.register.regbank_name,
+                                                          self.register.sheet_name,
+                                                          self.register.register_name, None)
             else:
                 print("Write failed, investigate")
         if new_read_value==None:
@@ -371,7 +375,7 @@ class regbank_reader_gui_controller_t(QObject):
             if fname not in self.regbanks_path_list.values():
                 self.regbanks_path_list[regbank_name] = fname
                 load_regbank(fname)
-            self.slot_gui_regbank_changed(regbank_name)
+                self.gui.comboBox_regbankSelect.addItem(regbank_name)
 
     def slot_gui_regbank_sheet_changed(self):
         name = self.gui.comboBox_sheetSelect.currentText()
@@ -405,19 +409,21 @@ class regbank_reader_gui_controller_t(QObject):
             msgBox.setStandardButtons(QMessageBox.Ok);
             msgBox.exec_()
 
-    def slot_gui_regbank_changed(self, regbank_name):
+    def slot_gui_regbank_changed(self):
+        regbank_name = self.gui.comboBox_regbankSelect.currentText()
         try:
             fname = self.regbanks_path_list[regbank_name]
         except:
             set_trace()
         workbook = xlrd.open_workbook(fname)
         sheet_names = workbook.sheet_names()
-        self.gui.comboBox_regbankSelect.blockSignals(True)
-        self.gui.comboBox_regbankSelect.addItem(regbank_name)
-        self.gui.comboBox_regbankSelect.blockSignals(False)
+        self.gui.comboBox_sheetSelect.blockSignals(True)
         self.gui.comboBox_sheetSelect.clear()
         for sheet_name in sheet_names:
-            self.gui.comboBox_sheetSelect.addItem(sheet_name)
+            if is_regbank_sheet_valid(regbank_name, sheet_name):
+                self.gui.comboBox_sheetSelect.addItem(sheet_name)
+        self.gui.comboBox_sheetSelect.blockSignals(False)
+        self.slot_gui_regbank_sheet_changed()
 
     # Memory editor related slots
     def slot_gui_memEditor_update_value(self, value):
@@ -562,8 +568,13 @@ class regbank_reader_gui_controller_t(QObject):
     def slot_gui_regbank_updated(self):
         self.gui.comboBox_loadedRegbankSel.blockSignals(True)
         for regbank_name in self.model.db.keys():
-            if self.gui.comboBox_loadedRegbankSel.findText(regbank_name) < 0:
-                self.gui.comboBox_loadedRegbankSel.addItem(regbank_name)
+            to_load = False
+            for sheet_name in self.model.db[regbank_name]:
+                if self.model.db[regbank_name][sheet_name]:
+                    to_load = True
+            if to_load:
+                if self.gui.comboBox_loadedRegbankSel.findText(regbank_name) < 0:
+                    self.gui.comboBox_loadedRegbankSel.addItem(regbank_name)
         self.gui.comboBox_loadedRegbankSel.blockSignals(False)
         self.gui.comboBox_loadedRegbankSel.currentIndexChanged.emit(
                 self.gui.comboBox_loadedRegbankSel.currentIndex())
@@ -582,8 +593,11 @@ class regbank_reader_gui_controller_t(QObject):
                     self.gui.comboBox_loadedSheetSel.addItem(sheet_name)
             sheet_name = self.gui.comboBox_loadedSheetSel.currentText()
             self.gui.comboBox_loadedRegisterSel.clear()
-            for register_name in self.model.db[regbank_name][sheet_name].registers.keys():
-                self.gui.comboBox_loadedRegisterSel.addItem(register_name)
+            try:
+                for register_name in self.model.db[regbank_name][sheet_name].registers.keys():
+                    self.gui.comboBox_loadedRegisterSel.addItem(register_name)
+            except:
+                set_trace()
         elif self.sender()==self.gui.comboBox_loadedSheetSel:
             # Sheet selection changed
             sheet_name = self.gui.comboBox_loadedSheetSel.currentText()

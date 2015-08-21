@@ -14,7 +14,7 @@ class offsets_enum_t(enumeration.Enum):
 subfield_t      = StructDict("subfield_t", ["name", "bit_width", "bit_position", "sw_attr", 
                                             "hw_attr", "default_val", "description", "value"])
 register_t      = StructDict("register_t", ["regbank_name", "sheet_name", "register_name", "offset_addr", "subfields", "value"])
-sheet_t         = StructDict("sheet_t",    ["regbank_name", "sheet_name", "base_addr","mmap_done", "start_addr", "end_addr", "offset_type", "registers"])
+sheet_t         = StructDict("sheet_t",    ["regbank_name", "sheet_name", "base_addr", "start_addr", "end_addr", "offset_type", "registers"])
 ## Register Access from  db
 #  db["regbank"]["sheet"]["register"] = 
 db              = OrderedDict()
@@ -148,6 +148,23 @@ def regbank_unmake_struct(regbank_name, sheet_name):
     delattr(regbank, sheet_name)
     db_dict[regbank_name] = regbank
 
+def is_regbank_sheet_valid(regbank_name, sheet_name):
+    workbook = xlrd.open_workbook(regbank_files[regbank_name])
+    xl_sheet = workbook.sheet_by_name(sheet_name)
+    row_idx = 0
+    while row_idx < xl_sheet.nrows:
+        text = xl_sheet.row(row_idx)[0].value
+        if re.search(regbank_info["start_row_header"], text, re.IGNORECASE):
+            row_idx += 1    # Skip first row corresponding to header
+            break
+        else:
+            row_idx += 1
+    if row_idx == xl_sheet.nrows:
+        return False
+    else:
+        return True
+
+
 def regbank_load_sheet(regbank_name, sheet_name, 
         base_addr, offset_type=offsets_enum_t.BYTE_OFFSETS, as_sheet_name=None):
     assert regbank_name in regbank_files.keys(), \
@@ -162,6 +179,7 @@ def regbank_load_sheet(regbank_name, sheet_name,
                 "Loaded regbank doesnt contain sheet specified"
     except:
         set_trace()
+        pass
     xl_sheet = workbook.sheet_by_name(sheet_name)
     row_idx = 0
     while row_idx < xl_sheet.nrows:
@@ -172,7 +190,7 @@ def regbank_load_sheet(regbank_name, sheet_name,
         else:
             row_idx += 1
     if row_idx == xl_sheet.nrows:
-        assert 0, "Register sheet is an invalid sheet"
+        assert 0, "Invalid sheet"
 
     if as_sheet_name:
         try:
@@ -203,7 +221,6 @@ def regbank_load_sheet(regbank_name, sheet_name,
         if row_idx>=xl_sheet.nrows :
             break
     db[regbank_name][sheet_name].offset_type = offset_type
-    db[regbank_name][sheet_name].mmap_done = False
     first_register_name = list(db[regbank_name][sheet_name].registers.keys())[0]
     last_register_name  = list(db[regbank_name][sheet_name].registers.keys())[-1]
     db[regbank_name][sheet_name].start_addr = \
