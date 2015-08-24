@@ -1,0 +1,16 @@
+Requirements
+============
+    - Python 3.3 or later
+    - Python packages
+        - PyQt4 for installed version of Python
+        - xlrd package
+        - sh package
+
+Basic usage
+===========
+    1) Invoking in GUI mode.
+            - Start main.py with -gui option.
+    2) Invoking execution of .tib script
+            - Start main.py with -f <path to tib file>
+
+            
