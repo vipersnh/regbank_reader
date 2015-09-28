@@ -67,10 +67,10 @@ static void msg_parser_resp(msg_handle_type_t msg_handle,
 static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
 {
     msg_val_t ret_val = -1;
-    msg_address_t mapped_addr = (msg_address_t)msg_parser_dynamic_mmap((void*)addr);
 #if PLATFORM == HOST
     return 0xABCDEFA;
 #endif
+    msg_address_t mapped_addr = (msg_address_t)msg_parser_dynamic_mmap((void*)addr);
     switch (val_size) {
         case 1:
             {
@@ -96,10 +96,10 @@ static msg_val_t read_value(msg_address_t addr, uint8_t val_size)
 
 void write_value(msg_address_t addr, msg_val_t val, uint8_t val_size)
 {
-    msg_address_t mapped_addr = (msg_address_t)msg_parser_dynamic_mmap((void*)addr);
 #if PLATFORM == HOST
     return;
 #endif
+    msg_address_t mapped_addr = (msg_address_t)msg_parser_dynamic_mmap((void*)addr);
     switch (val_size) {
         case 1:
             {

@@ -15,7 +15,7 @@ typedef enum {
 #define UDP_REPEAT_TIMEOUT_THRESHOLD 2
 
 /* UDP Message format
- * Message = "PROT : TCP, IP : {ip_address in xxx.xxx.xxx.xxx format}, PORT : {x}, MAX_MSG_LEN : {x}"
+ * Message = "PROT : TCP, IP : {ip_address in xxx.xxx.xxx.xxx format}, PORT : {x}, MAX_MSG_LEN : {x}, SERVER_UNIQUE_ID : {x of 8 bytes}, SERVER_UNIQUE_MSG : {x upto 40 chars}"
  * Repeated over UDP broadcast every udp_repeat_timeout
  */
 
@@ -31,9 +31,11 @@ class server {
     public :
         static void * start(void *);
         server(uint32_t udp_port, uint32_t tcp_port, uint8_t udp_repeat_timeout, 
-                uint8_t tcp_alive_timeout, const char *);
+                uint8_t tcp_alive_timeout, const char *itf, uint64_t unique_id, const char *unique_msg);
         void stop();
     private :
+        uint64_t unique_id;
+        const char * unique_msg;
         int server_socket_handle, client_socket_handle;
         int udp_socket_handle;
         pthread_t udp_thread_id, tcp_thread_id;

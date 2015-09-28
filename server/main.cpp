@@ -26,11 +26,17 @@ void ctrl_c_handler(int sig)
 
 int main(int argc, char *argv[])
 {
-    if (argc==1 || argc>2) {
-        printf("Enter an interface [eth0, wlan0 or soon] to attach server. Exiting\n");
+    if (argc != 4) {
+        printf("Enter an interface [eth0, wlan0 or soon] to attach server, unique_id and unique_msg. Exiting\n");
         exit(-1);
     }
-    g_svr = new server(UDP_PORT, TCP_PORT, UDP_REPEAT_TIMEOUT, TCP_ALIVE_TIMEOUT, argv[1]);
+    char itf[100];
+    uint64_t unique_id;
+    char unique_msg[100];
+    sscanf(argv[1], "%100s", itf);
+    sscanf(argv[2], "%llx", &unique_id);
+    sscanf(argv[3], "%100s", unique_msg);
+    g_svr = new server(UDP_PORT, TCP_PORT, UDP_REPEAT_TIMEOUT, TCP_ALIVE_TIMEOUT, itf, unique_id, unique_msg);
     signal(SIGINT, ctrl_c_handler);
     signal(SIGTERM, ctrl_c_handler);
     printf("Starting server \n");

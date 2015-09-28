@@ -21,8 +21,11 @@ extern "C" {
 
 
 server::server(uint32_t udp_port, uint32_t tcp_port, 
-        uint8_t udp_repeat_timeout, uint8_t tcp_alive_timeout, const char * itf)
+        uint8_t udp_repeat_timeout, uint8_t tcp_alive_timeout, const char * itf, uint64_t unique_id,
+        const char * unique_msg)
 {
+    this->unique_id = unique_id;
+    this->unique_msg = unique_msg;
     this->server_udp_transmit_port   = udp_port;
     this->server_tcp_listen_port     = tcp_port;
     assert(udp_repeat_timeout>=UDP_REPEAT_TIMEOUT_THRESHOLD, ASSERT_NONFATAL);
@@ -153,9 +156,8 @@ void server::udp_repeater_loop()
         printf("Error in udp socket creation \n");
     }
 
-    sprintf(broadcast_message, "PROT : TCP, IP : %s, PORT : %d, MAX_MSG_LEN : %d \n", 
-            this->hostIpAddr, this->server_tcp_listen_port, MSG_MAX_LEN);
-
+    snprintf(broadcast_message, sizeof(broadcast_message), "PROT : TCP, IP : %s, PORT : %d, MAX_MSG_LEN : %d, UNIQUE_ID : 0x%llx, UNIQUE_MSG : %s \n", 
+            this->hostIpAddr, this->server_tcp_listen_port, MSG_MAX_LEN, this->unique_id, this->unique_msg);
     pthread_cleanup_push((server::udp_thread_cancel), this);
 
     while(1) {

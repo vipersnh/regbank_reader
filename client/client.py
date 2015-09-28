@@ -47,23 +47,49 @@ class msg_req_t (Structure)  :
 temp = msg_req_t();
 class client_t:
     def __init__(self, server_udp_port) :
+        self.previous_udp_message = []
         self.server_udp_port = server_udp_port;
         self.server_connected = False;
         self.server_socket_handle = None;
         self.local_ip         = "0.0.0.0";
+        self.server_unique_id = None;
+        self.server_unique_msg = None;
         self.sync_mutex = QMutex();
+
+    def set_server_id(self, unique_id):
+        self.server_unique_id = unique_id
+
+    def set_server_msg(self, unique_msg):
+        self.server_unique_msg = unique_msg
     
-    def get_udp_message(self) :
+    def get_udp_message(self, timeout=10) :
         sock = socket.socket(socket.AF_INET, 
                              socket.SOCK_DGRAM);
         sock.bind((self.local_ip, self.server_udp_port));
-        data, addr = sock.recvfrom(65535);
-        data = data.decode("utf-8");
-        msgs = data.strip().replace(' ', '').split(',');
-        vals = [];
-        for i in msgs :
-            vals.append(i.split(':')[1]);
-        return vals;
+        sock.settimeout(timeout)
+        ctime = time.time()
+        while 1:
+            try:
+                data, addr = sock.recvfrom(65535);
+            except :
+                return None
+            data = data.decode("utf-8");
+            msgs = data.strip().replace(' ', '').split(',');
+            vals = [];
+            for i in msgs :
+                vals.append(i.split(':')[1]);
+            sock.close()
+            del sock
+            if int(vals[4],0)==self.server_unique_id and vals[5]==self.server_unique_msg:
+                if len(self.previous_udp_message):
+                    # Check that this message can come from a single IP address 
+                    assert vals==self.previous_udp_message
+
+                self.previous_udp_message = vals
+                return vals;
+            elif time.time() >= ctime + timeout:
+                return None
+                
 
     def connect_to_server(self, target) :
         [protocol, ip_addr, port, max_msg_len] = target;

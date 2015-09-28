@@ -1,16 +1,18 @@
 import xlrd
 import sys
 import re
+from PyQt4.QtCore import QMutex
 from StructDict import StructDict
 from regbank_parser import offsets_enum_t, is_regbank_sheet_valid
 from hashlib import md5
 from os.path import basename, splitext
 from PyQt4.QtCore import pyqtRemoveInputHook, pyqtSignal, QThread, Qt, qDebug, QObject
-from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem, QMessageBox
+from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem, QMessageBox, QLabel
 from widgets.regbank_reader_main import *
 from regbank_reader_model import model, parse_tib_file, target_t, load_sheet, load_regbank, exec_tib
 import regbank_reader_model
 from widgets.register_tab import *
+from widgets.status_bar import *
 from pdb import set_trace
 from collections import namedtuple
 from os.path import basename, splitext
@@ -24,14 +26,15 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
                    view_field_t("Value", 2), view_field_t("Default value", 3),
                    view_field_t("General Description", 4)]
 
-    def __init__(self, register, parent, model):
+    def __init__(self, register, parent, model, register_id):
         super(register_table_t, self).__init__(parent)
         self.setupUi(self)
         self.show()
 
-        qDebug("register_table_t with register "+str(id(register)))
+#        qDebug("register_table_t with register "+str(id(register)))
         self.register = register
         self.model = model
+        self.register_id = register_id
         self.field_infos = []
         self.comboBox_registerAutoReadMode.setEditable(True)
         self.comboBox_registerAutoReadMode.lineEdit().setAlignment(Qt.AlignCenter)
@@ -43,7 +46,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         self.tableWidget_subfieldsView.verticalHeader().setResizeMode(QHeaderView.Stretch)
         self.tableWidget_subfieldsView.verticalHeader().setVisible(False)
         headerLabels = []
-        qDebug("tableWidget_subfieldsView items are set now")
+#        qDebug("tableWidget_subfieldsView items are set now")
         row_idx = 0
         for subfield_name in self.register.subfields.keys():
             subfield = self.register.subfields[subfield_name]
@@ -84,7 +87,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         self.tableWidget_subfieldsView.setHorizontalHeaderLabels(headerLabels)
         self.tableWidget_subfieldsView.cellChanged.connect(self.write_register_from_subfields_value)
         self.pushButton_readValue.clicked.connect(self.slot_register_update_clicked)
-        self.lineEdit_registerValue.editingFinished.connect(self.slot_register_update_write)
+        self.lineEdit_registerValue.returnPressed.connect(self.slot_register_update_write)
         self.slot_update_register_ui()
 
     def slot_update_register_ui(self):
@@ -124,7 +127,9 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
     def slot_register_set_value(self, value):
         self.tableWidget_subfieldsView.cellChanged.disconnect(self.write_register_from_subfields_value)
         text = hex(value).upper().replace("X", "x")
+        self.lineEdit_registerValue.blockSignals(True)
         self.lineEdit_registerValue.setText(text)
+        self.lineEdit_registerValue.blockSignals(False)
         for field_info in self.field_infos:
             sub_value = (value & field_info.bit_mask) >> field_info.bit_shift
             item = self.tableWidget_subfieldsView.item(field_info.row_idx, field_info.col_idx)
@@ -145,6 +150,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
             print("Read failed, investigate")
 
     def slot_register_update_write(self):
+        self.lineEdit_registerValue.returnPressed.disconnect(self.slot_register_update_write)
         text = self.lineEdit_registerValue.text()
         write_value = int(text, 0)
         self.model.write_register(self.register.regbank_name,
@@ -159,6 +165,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         else:
             # Display the previous write value to all places
             self.slot_register_set_value(write_value)
+        self.lineEdit_registerValue.returnPressed.connect(self.slot_register_update_write)
 
     def write_register_from_subfields_value(self):
         self.tableWidget_subfieldsView.cellChanged.disconnect(self.write_register_from_subfields_value)
@@ -203,9 +210,19 @@ class regbank_reader_gui_controller_t(QObject):
 
     signal_reset_sheet_register = pyqtSignal(str, str)
 
+    ( UNCONNECTED_NON_SEARCH_STATE,
+      UNCONNECTED_SEARCH_STATE,
+      CONNECTED_NON_SEARCH_STATE) = range(3)
+
     def __init__(self, tib_file):
         super(regbank_reader_gui_controller_t, self).__init__()
         self.init_tib_file = tib_file
+        self.target_state = self.UNCONNECTED_NON_SEARCH_STATE
+        self.recording_messages = {"stopped" : "Record Stoppped", "running" : "Record Running"}
+        self.status_messages = {"no_search" : "Targets not being searched",
+                                "searching" : "Targets are searched",
+                                "connected" : "Target connected",
+                                "disconnected" : "Targets disconnected"}
 
     def initialize(self, tib_file = None):
         self.regbanks_path_list = dict()
@@ -222,12 +239,17 @@ class regbank_reader_gui_controller_t(QObject):
         self.gui.setupUi(self.window)
         self.window.show()
 
+        self.gui.statusWidget_parent = QWidget()
+        self.gui.statusWidget = Ui_statusWidget()
+        self.gui.statusWidget.setupUi(self.gui.statusWidget_parent)
+        self.gui.statusWidget.label_record.setText(self.recording_messages["stopped"])
+        self.gui.statusWidget.label_status.setText(self.status_messages["disconnected"])
+        self.gui.statusBar.addPermanentWidget(self.gui.statusWidget_parent,1)
+        self.gui.statusBar.setSizeGripEnabled(False)
+
         # Target Initialization Section
-        self.gui.pushButton_targetConnect.setEnabled(False)
-        self.gui.pushButton_targetConnect.setText("Waiting for targets")
-        self.gui.comboBox_targetsList.setEditable(True)
-        self.gui.comboBox_targetsList.lineEdit().setAlignment(Qt.AlignCenter)
-        self.gui.comboBox_targetsList.lineEdit().setReadOnly(True)
+        self.gui.pushButton_targetConnect.setEnabled(True)
+        self.gui.pushButton_targetConnect.setText("Click to search")
         self.gui.pushButton_targetConnect.clicked.connect(self.slot_gui_target_button_clicked)
 
         # Regbank Initialization Section
@@ -250,7 +272,7 @@ class regbank_reader_gui_controller_t(QObject):
         self.gui.comboBox_loadedSheetOffsetSel.addItem("BYTE_OFFSETS")
         self.gui.comboBox_loadedSheetOffsetSel.addItem("WORD_OFFSETS")
         self.gui.lineEdit_loadedCalcAddr.setReadOnly(True)
-        self.gui.lineEdit_loadedSheetAddr.editingFinished.connect(self.slot_gui_regbank_sheet_base_addr_changed)
+        self.gui.lineEdit_loadedSheetAddr.returnPressed.connect(self.slot_gui_regbank_sheet_base_addr_changed)
         self.gui.comboBox_loadedSheetOffsetSel.currentIndexChanged.connect(self.slot_gui_regbank_sheet_offsets_changed)
         
         # Memory Editor Section
@@ -270,8 +292,8 @@ class regbank_reader_gui_controller_t(QObject):
         self.gui.pushButton_getCurrRegisterAddr.clicked.connect(self.slot_gui_memEditor_getCurrRegisterAddr)
         self.gui.pushButton_memEditorReadValue.clicked.connect(self.slot_gui_memEditor_readValue)
         self.gui.pushButton_memEditorWriteValue.clicked.connect(self.slot_gui_memEditor_writeValue)
-        self.gui.lineEdit_memEditorAddr.editingFinished.connect(self.slot_gui_memEditor_regAddrChanged)
-        self.gui.lineEdit_memEditorNextValue.editingFinished.connect(self.slot_gui_memEditor_nextValueChanged)
+        self.gui.lineEdit_memEditorAddr.returnPressed.connect(self.slot_gui_memEditor_regAddrChanged)
+        self.gui.lineEdit_memEditorNextValue.returnPressed.connect(self.slot_gui_memEditor_nextValueChanged)
 
 
         # TIB Initialization Section
@@ -295,7 +317,6 @@ class regbank_reader_gui_controller_t(QObject):
         # Connect slots related to targets
         self.model.signal_target_connected.connect(self.slot_gui_target_connected)
         self.model.signal_target_disconnected.connect(self.slot_gui_target_disconnected)
-        self.model.signal_targets_list_updated.connect(self.slot_gui_targets_list_updated)
         
         # Connect slots related to model
         self.model.signal_regbank_updated.connect(self.slot_gui_regbank_updated)
@@ -304,6 +325,11 @@ class regbank_reader_gui_controller_t(QObject):
         self.gui.comboBox_loadedRegbankSel.currentIndexChanged.connect(self.slot_gui_regbank_selection_changed)
         self.gui.comboBox_loadedSheetSel.currentIndexChanged.connect(self.slot_gui_regbank_selection_changed)
         self.gui.comboBox_loadedRegisterSel.currentIndexChanged.connect(self.slot_gui_regbank_selection_changed)
+
+        self.gui.tabWidget_registers.tabCloseRequested.connect(self.slot_gui_tab_close)
+
+        self.gui.actionStart.triggered.connect(self.slot_gui_record_started)
+        self.gui.actionStop.triggered.connect(self.slot_gui_record_stopped)
 
         # Start the model
         regbank_reader_model.initialize()
@@ -315,28 +341,55 @@ class regbank_reader_gui_controller_t(QObject):
             self.tibs_list[tib_name] = fname
             self.gui.comboBox_tibList.addItem(tib_name)
 
+    def slot_gui_record_started(self):
+        self.model.start_recording()
+        self.gui.statusWidget.label_record.setText("Recording : Started")
+
+    def slot_gui_record_stopped(self):
+        self.gui.statusWidget.label_record.setText("Recording : Stopped")
+        self.model.stop_recording()
+        recording = self.model.get_recording()
+        fdialog = QFileDialog(None)
+        fname = fdialog.getSaveFileName(None, 'Save file',
+                "./", ".tib")
+        if not re.search(".tib$", fname) and fname is not '':
+            fname += ".tib"
+            f = open(fname, "w")
+            f.write("\n".join(recording))
+            f.close()
+
+
     # Target related slots
     def slot_gui_target_button_clicked(self):
-        target_str = self.gui.comboBox_targetsList.currentText()
-        [prot, ip_addr, port] = target_str.replace(" ",'').split(':')
-        if self.model.target_connected:
-            # Disconnect currently connected target
-            target = target_t(ip_addr, port, prot, None)
+        if self.target_state == self.UNCONNECTED_NON_SEARCH_STATE:
+            self.gui.pushButton_targetConnect.setText("Searching for target")
+            server_unique_id = int(self.gui.lineEdit_unique_id.text(), 0)
+            server_unique_msg = self.gui.lineEdit_unique_msg.text()
+            self.model.set_target_search_enabled(True)
+            self.model.update_target_search(server_unique_id, server_unique_msg)
+            self.target_state = self.UNCONNECTED_SEARCH_STATE
+            self.gui.statusWidget.label_status.setText(self.status_messages["searching"])
+        elif self.target_state == self.UNCONNECTED_SEARCH_STATE:
+            self.gui.pushButton_targetConnect.setText("Click to search")
+            self.model.set_target_search_enabled(False)
+            self.model.update_target_search(None, None)
+            self.target_state = self.UNCONNECTED_NON_SEARCH_STATE
+            self.gui.statusWidget.label_status.setText(self.status_messages["disconnected"])
+        elif self.target_state == self.CONNECTED_NON_SEARCH_STATE:
+            self.gui.pushButton_targetConnect.setText("Click to search")
+            self.model.set_target_search_enabled(False)
+            self.model.update_target_search(None, None)
             self.model.disconnect_from_target()
+            self.target_state = self.UNCONNECTED_NON_SEARCH_STATE
+            self.gui.statusWidget.label_status.setText(self.status_messages["disconnected"])
 
-        else:
-            # Connect to target
-            target = target_t(ip_addr, port, prot, None)
-            self.model.connect_to_target(target)
+    def slot_gui_tab_close(self, index):
+        if self.gui.tabWidget_registers.count()>1:
+            # Remove the indexed tab
+            register_widget = self.gui.tabWidget_registers.widget(index)
+            self.gui.tabWidget_registers.removeTab(index)
+            del self.register_tabs[register_widget.register_id]
 
-    def slot_gui_targets_list_updated(self, targets):
-        if not self.model.target_connected:
-            self.gui.pushButton_targetConnect.setEnabled(True)
-            self.gui.pushButton_targetConnect.setText("Click to connect")
-            self.gui.comboBox_targetsList.clear()
-            for target in targets:
-                target_str = target.protocol + " : " + target.ip_addr + " : " + target.port
-                self.gui.comboBox_targetsList.addItem(target_str)
 
     def slot_gui_target_connected(self, target):
         self.gui.pushButton_loadRegBank.setEnabled(True)
@@ -348,9 +401,10 @@ class regbank_reader_gui_controller_t(QObject):
         self.gui.pushButton_memEditorWriteValue.setEnabled(True)
         self.gui.comboBox_memEditorMode.setEnabled(True)
 
-
         self.gui.pushButton_targetConnect.setText("Click to disconnect")
-        self.gui.comboBox_targetsList.setEnabled(False)
+        self.target_state = self.CONNECTED_NON_SEARCH_STATE
+        self.gui.statusWidget.label_status.setText(self.status_messages["connected"] + 
+                ". With IP : {0}, PORT : {1}".format(target.ip_addr, target.port))
 
     def slot_gui_target_disconnected(self):
         self.gui.pushButton_loadRegBank.setEnabled(False)
@@ -362,8 +416,9 @@ class regbank_reader_gui_controller_t(QObject):
         self.gui.pushButton_memEditorWriteValue.setEnabled(False)
         self.gui.comboBox_memEditorMode.setEnabled(False)
 
-        self.gui.pushButton_targetConnect.setText("Click to connect")
-        self.gui.comboBox_targetsList.setEnabled(True)
+        self.gui.pushButton_targetConnect.setText("Click to search")
+        self.target_state = self.UNCONNECTED_NON_SEARCH_STATE
+        self.gui.statusWidget.label_status.setText(self.status_messages["disconnected"])
 
     # Regbank related slots
     def slot_gui_load_regbank(self):
@@ -509,7 +564,7 @@ class regbank_reader_gui_controller_t(QObject):
         fdialog = QFileDialog(None)
         fname = fdialog.getOpenFileName(None, 'Open file',
                 "./", "All files (*.tib)")
-        if fname is not'' and re.search(".tib$", fname):
+        if fname is not '' and re.search(".tib$", fname):
             self.gui.pushButton_executeTib.setEnabled(True)
             tib_name = splitext(basename(fname))[0]
             if fname not in self.tibs_list.values():
@@ -635,12 +690,15 @@ class regbank_reader_gui_controller_t(QObject):
         self.gui.comboBox_loadedSheetOffsetSel.setCurrentIndex(
                 0 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 1)
 
+        register_id = self.slot_get_register_id()
+
+
         if self.gui.tabWidget_registers.count()==0:
             addTabWidget = True
         else:
-            if self.slot_get_register_id() in self.register_tabs.keys():
+            if register_id in self.register_tabs.keys():
                 # Register already exists, put the tab to highlight
-                register_widget = self.register_tabs[self.slot_get_register_id()]
+                register_widget = self.register_tabs[register_id]
                 idx = self.gui.tabWidget_registers.indexOf(register_widget)
                 self.gui.tabWidget_registers.setCurrentIndex(idx)
             else:
@@ -651,11 +709,11 @@ class regbank_reader_gui_controller_t(QObject):
             base_addr = sheet.base_addr
             offset_type = sheet.offset_type
             register_widget = register_table_t(register, self.gui.tabWidget_registers, 
-                    self.model)
+                    self.model, register_id)
             self.signal_reset_sheet_register.connect(register_widget.slot_reset_register_ui)
             self.gui.tabWidget_registers.addTab(register_widget, 
                     "{0}:{1}".format(sheet_name, register_name))
-            self.register_tabs[self.slot_get_register_id()] = register_widget
+            self.register_tabs[register_id] = register_widget
             idx = self.gui.tabWidget_registers.indexOf(register_widget)
             self.gui.tabWidget_registers.setCurrentIndex(idx)
 

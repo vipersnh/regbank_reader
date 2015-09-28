@@ -1,11 +1,14 @@
 # Lines Starting with '#' are ignored, ' ' character is ignored if more than one.
 # Lines containing '#' after each tib is treated as a comment
 
-connect("192.168.32.187", "3333", "tcp")
+connect(0x00, "linux_pc")
 print(hex(read(0x10000, [9,0])))
 write(0x3C000000, 0x00)
 write(0x3C000004, 0x07, [3,0]) 
 write(0x3C000008, 0x07, [10,3])
+
+for i in range(10):
+    print(i)
 
 load_regbank("../regbank_sheet_examples/demo_regbank.xlsx") # Relative to location of tib file 
 load_sheet(demo_regbank.Sheet_A, 0x40004000, 4, "Sheet_A0")

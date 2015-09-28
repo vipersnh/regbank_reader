@@ -7,11 +7,14 @@ from client import *
 from os.path import dirname
 from sys import exit
 from StructDict import StructDict
+import time
 import re
+import os
 import types
+import code
 
 target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
-                                       "max_msg_len"])
+                                       "max_msg_len", "unique_id", "unique_msg"])
 bitfield_t   = StructDict("bitfield_t", ["value", "mask", 
                                          "rshift", "end",
                                          "start"])
@@ -19,7 +22,6 @@ global_env   = dict()
 
 class regbank_reader_model_t (QObject):
     # Signals
-    signal_targets_list_updated = pyqtSignal(list)
     signal_target_connected = pyqtSignal(target_t)
     signal_target_disconnected = pyqtSignal()
     signal_tib_file_loaded = pyqtSignal(str)
@@ -33,11 +35,25 @@ class regbank_reader_model_t (QObject):
     def __init__(self, tib_file=None, cmd_line=False, server_udp_port=2222):
         super(regbank_reader_model_t, self).__init__()
         self.db = regbank_parser.db # Reference to actual database
+        self.target_search_enabled = False
+        self.recording_enabled = False
+        self.record_sequence = list()
+        self.regbank_load_sequence = list()
         self.client = client_t(server_udp_port)
-        self.targets_list = []
+        self.target = None
         self.target_connected = False
         self.cmd_line = cmd_line
         self.tib_file = tib_file
+
+    def start_recording(self):
+        self.recording_enabled = True
+        del self.record_sequence[:]
+
+    def stop_recording(self):
+        self.recording_enabled = False
+
+    def get_recording(self):
+        return self.regbank_load_sequence + self.record_sequence
 
     def initialize(self):
         self.db_dict = regbank_parser.db_dict
@@ -55,24 +71,26 @@ class regbank_reader_model_t (QObject):
             parse_tib_file(self.tib_file)
 
     def add_new_target(self ,target):
-        target_already_listed = False
-        for item  in self.targets_list:
-            if target==item:
-                target_already_listed = True
-                break
-
-        if not target_already_listed:
-            self.targets_list.append(target)
-        
-        self.signal_targets_list_updated.emit(self.targets_list)
+        if self.target==None:
+            record = "connect({0}, \"{1}\")".format(hex(target.unique_id), target.unique_msg)
+            self.regbank_load_sequence.append(record)
+            self.target = target
+            self.connect_to_target(target)
         
     def target_search(self):
         print("Target search thread started")
+        count = 0
         while (1):
-            [protocol, ip_addr, port, max_msg_len] = \
-                    self.client.get_udp_message()
-            target = target_t(ip_addr, port, protocol, max_msg_len)
-            self.add_new_target(target)
+            msg = self.client.get_udp_message()
+            if msg and self.target_search_enabled:
+                [protocol, ip_addr, port, max_msg_len, server_unique_id, server_unique_msg] = msg;
+                target = target_t(ip_addr, port, protocol, max_msg_len, int(server_unique_id, 0), server_unique_msg)
+                self.add_new_target(target)
+            elif self.target_search_enabled:
+                count += 1
+                print("No server found, please start the server. {0} timeouts".format(count))
+            else:
+                time.sleep(1)
 
     def keep_alive(self):
         print("Keep alive thread started")
@@ -86,16 +104,23 @@ class regbank_reader_model_t (QObject):
                 msg_write.value = 0x00
                 resp = self.client.query_server(msg_write)
 
+    def update_target_search(self, server_unique_id, server_unique_msg):
+        self.client.set_server_id(server_unique_id)
+        self.client.set_server_msg(server_unique_msg)
+
+    def set_target_search_enabled(self, flag):
+        self.target_search_enabled = flag
+
     def connect_to_target(self, target):
         self.target_connected = True
-        self.selected_target = target
+        self.target = target
         self.client.connect_to_server([target.protocol, target.ip_addr, 
                 target.port, target.max_msg_len])
         self.signal_target_connected.emit(target)
 
     def disconnect_from_target(self):
         self.target_connected = False
-        self.selected_target = None
+        self.target = None
         self.client.disconnect_server()
         self.signal_target_disconnected.emit()
 
@@ -165,6 +190,12 @@ class regbank_reader_model_t (QObject):
             register = sheet.registers[register_name]
             addr = sheet.base_addr + register.offset_addr * \
                     (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)
+            if self.recording_enabled:
+                record = "write({0}.{1}.{2}".format(regbank_name, sheet_name, register_name)
+                if subfield_name:
+                    record += ".{0}".format(subfield_name)
+                record += ", {0})".format(hex(write_value))
+
             if subfield_name:
                 subfield = register.subfields[subfield_name]
                 bitfield = get_bitfield_spec(subfield.bit_position[0], subfield.bit_position[-1])
@@ -172,6 +203,11 @@ class regbank_reader_model_t (QObject):
                 read_value &= bitfield.mask
                 assert (write_value <= bitfield.value), "Number given is larger than bitfield specification"
                 write_value = read_value | (write_value << bitfield.rshift)
+            
+            if self.recording_enabled:
+                record += "    # write({0}, {1})".format(hex(addr), hex(write_value))
+                self.record_sequence.append(record)
+
             return self.write_address(addr, write_value)
         except:
             set_trace()
@@ -397,20 +433,21 @@ def parse_tib_file(tib_file):
         assert 0, "Target must be connected before parsing tib file"
 
     with open(tib_file, "r") as f:
+        script = ""
         for tib in f:
-            tib = tib.strip()
-            if tib=='':
-                # Ignore blank line
-                continue
-            if re.search("^\#", tib):
-                # Ignore tib as it is a comment
-                continue
-
-            if '#' in tib:
-                # Trim contents after '#' in the tib
-                tib = tib[:tib.find('#')].strip()
-
-            exec_tib(tib)
+            script += tib
+            try:
+                co = code.compile_command(script, "<stdin>", "exec")
+            except SyntaxError:
+                print("SyntaxError in line : {0}".format(tib));
+            except OverflowError:
+                print("OverflowError in line : {0}".format(tib));
+            except ValueError:
+                print("ValueError in line : {0}".format(tib));
+            if co:
+                exec_tib(script, co)
+                script = ""
+    print("")
     model.signal_tib_file_loaded.emit(tib_file)        
 
 def initialize():
@@ -428,8 +465,20 @@ def initialize():
     global_env["print"] = _print_
 
 ## Exported API
-def connect(ip_addr, port, prot):
-    target = target_t(ip_addr, port, prot, 0)
+def connect(unique_id, unique_msg):
+    model.client.set_server_id(unique_id)
+    model.client.set_server_msg(unique_msg)
+    while 1:
+        msg = model.client.get_udp_message()
+        if msg:
+            [protocol, ip_addr, port, max_msg_len, server_unique_id, server_unique_msg] = msg;
+            server_unique_id = int(server_unique_id, 0)
+            target = target_t(ip_addr, port, protocol, max_msg_len, server_unique_id, server_unique_msg)
+            break
+        else:
+            print("No server found, please start the server.")
+            os._exit(0)
+        
     if model.target_connected:
         model.disconnect_from_target()   
     model.add_new_target(target)
@@ -442,6 +491,8 @@ def load_regbank(regbank_file):
             regbank_file = dirname(model.tib_file) + "/" + regbank_file
         except:
             set_trace()
+    record = "load_regbank(\"{0}\")".format(regbank_file)
+    model.regbank_load_sequence.append(record)
     regbank_parser.regbank_load_excel(regbank_file)
     model.signal_regbank_file_loaded.emit(regbank_file)
 
@@ -453,6 +504,9 @@ def load_sheet(regbank_sheet, base_addr, offset_size, as_sheet=None):
         offsets_enum_t.WORD_OFFSETS
     regbank_name = regbank_sheet.__regbank_name__
     sheet_name   = regbank_sheet.__sheet_name__
+    record = "load_sheet({0}.{1}, {2}, {3}, {4})".format(regbank_name, sheet_name,
+            hex(base_addr), hex(offset_size), as_sheet)
+    model.regbank_load_sequence.append(record)
     if not regbank_parser.is_regbank_sheet_loaded(regbank_name, sheet_name, as_sheet):
         regbank_parser.regbank_load_sheet(regbank_name, sheet_name, base_addr,
             offset_type, as_sheet)
@@ -519,20 +573,20 @@ def write(write_to, write_value, bitmask=None):
         write_value = (write_value & bitfield.mask) >> bitfield.rshift
         model.write_register(regbank_name, sheet_name, register_name, subfield_name, write_value)
 
-def exec_tib(tib):
+def exec_tib(exec_lines, co):
     for (key, value) in regbank_parser.db_dict.items():
         if key not in global_env.keys():
             global_env[key] = value
     global_env["_print_buf_"] = list()
     try:
-        exec(tib, global_env)
+        exec(co, global_env)
         if model.cmd_line:
-            print("Exec: {0}".format(tib))
+                print(exec_lines, end='')
         else:
-            model.signal_tib_exec_op.emit([tib])
+            model.signal_tib_exec_op.emit([exec_lines])
     except:
         set_trace()
-        exec(tib, global_env) # Execute on break to see error
+        exec(co, global_env) # Execute on break to see error
     if model.cmd_line:
         if len(global_env["_print_buf_"]):
             for i in global_env["_print_buf_"]:
