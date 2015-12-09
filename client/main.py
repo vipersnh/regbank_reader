@@ -20,6 +20,17 @@ from os.path import basename, splitext
 view_field_t = namedtuple("view_field_t", ["col_name", "col_num"])
 field_info_t = namedtuple("field_info_t", ["row_idx", "col_idx", "bit_mask", "bit_shift"])
 
+def get_number_from_string(string):
+    string = string.replace('_', '')
+    try:
+        return int(string, 0)
+    except:
+        return None
+        
+def get_string_from_number(number):
+    string = "0x{0:04X}_{0:04X}".format((number & 0xFFFF0000)>>16, number&0xFFFF)
+    return string
+
 class register_table_t (QWidget, Ui_register_tab, QObject) :
     # To store the columns and their spacing details
     view_fields = [view_field_t("Subfield Name", 0), view_field_t("Field desc", 1),
@@ -96,8 +107,8 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
                 if sheet.offset_type == offsets_enum_t.BYTE_OFFSETS else 4)
         self.lineEdit_registerName.setText("{0} @ {1}".format(self.register.register_name, 
             hex(register_addr)))
-        self.lineEdit_sheetBaseAddr.setText(hex(sheet.base_addr))
-        self.lineEdit_registerOffsetAddr.setText(str(self.register.offset_addr))
+        self.lineEdit_sheetBaseAddr.setText(get_string_from_number(sheet.base_addr))
+        self.lineEdit_registerOffsetAddr.setText(get_string_from_number(self.register.offset_addr))
         self.lineEdit_sheetOffsetType.setText("BYTE_OFFSETS" 
                 if sheet.offset_type == offsets_enum_t.BYTE_OFFSETS else 
                 "WORD_OFFSETS")
@@ -126,7 +137,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
 
     def slot_register_set_value(self, value):
         self.tableWidget_subfieldsView.cellChanged.disconnect(self.write_register_from_subfields_value)
-        text = hex(value).upper().replace("X", "x")
+        text = get_string_from_number(value).upper().replace("X", "x")
         self.lineEdit_registerValue.blockSignals(True)
         self.lineEdit_registerValue.setText(text)
         self.lineEdit_registerValue.blockSignals(False)
@@ -151,7 +162,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
 
     def slot_register_update_write(self):
         self.lineEdit_registerValue.returnPressed.disconnect(self.slot_register_update_write)
-        text = self.lineEdit_registerValue.text()
+        text = get_number_from_string(self.lineEdit_registerValue.text())
         write_value = int(text, 0)
         self.model.write_register(self.register.regbank_name,
                                   self.register.sheet_name,
@@ -170,7 +181,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
     def write_register_from_subfields_value(self):
         self.tableWidget_subfieldsView.cellChanged.disconnect(self.write_register_from_subfields_value)
         try:
-            old_read_value = int(self.lineEdit_registerValue.text(), 0)
+            old_read_value = get_number_from_string(self.lineEdit_registerValue.text())
         except:
             set_trace()
             pass
@@ -180,7 +191,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         write_success = None
         for field_info in self.field_infos:
             try:
-                sub_value = int(self.tableWidget_subfieldsView.item(field_info.row_idx, field_info.col_idx).text(), 0)
+                sub_value = get_number_from_string(self.tableWidget_subfieldsView.item(field_info.row_idx, field_info.col_idx).text())
             except:
                 valid_value = False
                 break
@@ -451,9 +462,9 @@ class regbank_reader_gui_controller_t(QObject):
         regbank_name = self.gui.comboBox_regbankSelect.currentText()
         sheet_name = self.gui.comboBox_sheetSelect.currentText()
         as_sheet_name = self.gui.lineEdit_asSheetName.text()
-        base_addr = self.gui.lineEdit_sheetLoadAddress.text()
-        if base_addr is not "":
-            base_addr = int(base_addr, 0)
+        base_addr = get_number_from_string(self.gui.lineEdit_sheetLoadAddress.text())
+        if base_addr is not None:
+            base_addr = (base_addr)
             offset_size = 1 if self.gui.comboBox_sheetOffsets.currentIndex()==0 else 4
             if as_sheet_name==sheet_name :
                 as_sheet_name = None
@@ -483,7 +494,7 @@ class regbank_reader_gui_controller_t(QObject):
     # Memory editor related slots
     def slot_gui_memEditor_update_value(self, value):
         self.gui.lineEdit_memEditorNextValue.blockSignals(True)
-        self.gui.lineEdit_memEditorNextValue.setText(hex(value))
+        self.gui.lineEdit_memEditorNextValue.setText(get_string_from_number(value))
         self.gui.lineEdit_memEditorNextValue.blockSignals(False)
         self.slot_gui_memEditor_radioBtnsSetValue(value)
 
@@ -520,7 +531,7 @@ class regbank_reader_gui_controller_t(QObject):
             value = self.slot_gui_memEditor_readValue()
     
     def slot_gui_memEditor_nextValueChanged(self):
-        value = int(self.gui.lineEdit_memEditorNextValue.text(), 0)
+        value = get_number_from_string(self.gui.lineEdit_memEditorNextValue.text())
         self.slot_gui_memEditor_update_value(value)
         if self.gui.comboBox_memEditorMode.currentIndex()==1:
             # Write current value and read back in Live Mode
@@ -544,20 +555,20 @@ class regbank_reader_gui_controller_t(QObject):
             register = sheet.registers[register_name]
             addr = sheet.base_addr + (register.offset_addr *
                     (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4))
-            self.gui.lineEdit_memEditorAddr.setText(hex(addr))
+            self.gui.lineEdit_memEditorAddr.setText(get_string_from_number(addr))
         except:
             pass
 
     def slot_gui_memEditor_readValue(self):
-        addr = int(self.gui.lineEdit_memEditorAddr.text(), 0)
+        addr = get_number_from_string(self.gui.lineEdit_memEditorAddr.text())
         value = self.model.read_address(addr)
         self.slot_gui_memEditor_update_value(value)
 
     def slot_gui_memEditor_writeValue(self):
-        addr = int(self.gui.lineEdit_memEditorAddr.text(), 0)
-        value = int(self.gui.lineEdit_memEditorNextValue.text(), 0)
+        addr = get_number_from_string(self.gui.lineEdit_memEditorAddr.text())
+        value = get_number_from_string(self.gui.lineEdit_memEditorNextValue.text())
         self.model.write_address(addr, value)
-        self.gui.lineEdit_memEditorCurrValue.setText(hex(value))
+        self.gui.lineEdit_memEditorCurrValue.setText(get_string_from_number(value))
 
     # TIB related slots
     def slot_gui_load_tib_file(self):
@@ -601,12 +612,12 @@ class regbank_reader_gui_controller_t(QObject):
         sheet_name   = self.gui.comboBox_loadedSheetSel.currentText()
         orig_base_addr = self.model.db[regbank_name][sheet_name].base_addr
         try:
-            base_addr = int(self.gui.lineEdit_loadedSheetAddr.text(), 0)
+            base_addr = get_number_from_string(self.gui.lineEdit_loadedSheetAddr.text())
             if base_addr==orig_base_addr:
                 return 
             self.model.db[regbank_name][sheet_name].base_addr = base_addr
         except:
-            self.gui.lineEdit_loadedSheetAddr.setText(hex(orig_base_addr))
+            self.gui.lineEdit_loadedSheetAddr.setText(get_string_from_number(orig_base_addr))
         self.slot_gui_update_register_ui()
         self.signal_reset_sheet_register.emit(regbank_name, sheet_name)
 
@@ -683,8 +694,8 @@ class regbank_reader_gui_controller_t(QObject):
         register_name = self.gui.comboBox_loadedRegisterSel.currentText()
 
         sheet = self.model.db[regbank_name][sheet_name]
-        self.gui.lineEdit_loadedSheetAddr.setText(hex(sheet.base_addr))
-        self.gui.lineEdit_loadedCalcAddr.setText(hex(sheet.base_addr + 
+        self.gui.lineEdit_loadedSheetAddr.setText(get_string_from_number(sheet.base_addr))
+        self.gui.lineEdit_loadedCalcAddr.setText(get_string_from_number(sheet.base_addr + 
                 sheet.registers[register_name].offset_addr * (1 
                     if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)))
         self.gui.comboBox_loadedSheetOffsetSel.setCurrentIndex(

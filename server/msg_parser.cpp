@@ -18,7 +18,7 @@ msg_req_t temp;
 static msg_parser_ctxt_t msg_parser_ctxt;
 static msg_parser_ctxt_t *g_msg_parser_ctxt = &msg_parser_ctxt;
 
-static uint8_t * msg_parser_dynamic_mmap(void * addr)
+uint8_t * msg_parser_dynamic_mmap(void * addr)
 {
     uint8_t * rv;
     rv = (uint8_t *)mmap(addr, 0x01, PROT_READ | PROT_WRITE,

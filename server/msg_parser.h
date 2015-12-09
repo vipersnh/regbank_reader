@@ -95,6 +95,7 @@ typedef struct {
 
 extern void msg_parser(char *req, char *resp, uint32_t *msg_len);
 extern void msg_parser_init();
+extern uint8_t * msg_parser_dynamic_mmap(void * addr);
 extern void msg_parser_munmap_all(void);
 
 #endif
