@@ -34,6 +34,13 @@ regbank_info = {"start_row_header"   :"Offset address",
                 "description_col"    :8,
                 "reserved_keyword"   :"RESERVED"};
 
+regbank_top_sheet_info =  {
+      "start_row_header"    : "Module",
+      "module_name_col"     : 0,
+      "address_bits_col"    : 1,
+      "base_address_col"    : 2,
+      "instance_name_col"   : 3
+    };
 
 
 regbank_files = OrderedDict()  # Dict of all regbank files to be opened for reading, 
@@ -266,7 +273,47 @@ def is_regbank_sheet_loaded(regbank_name, sheet_name, as_sheet_name):
     else:
         return False
 
-        
+def regbank_load_instances(regbank_name):
+    instance_sheet_name = "top_instances_map"
+    assert regbank_name in regbank_files.keys(), \
+            "Regbank file must be loaded before loading sheets"
+    try:
+        workbook = xlrd.open_workbook(regbank_files[regbank_name])
+    except:
+        set_trace()
+        pass
+    
+    try:
+        assert instance_sheet_name in workbook.sheet_names(), \
+            "Top Level Instances sheet not found"
+    except:
+        set_trace()
+        pass
+
+    xl_sheet = workbook.sheet_by_name(instance_sheet_name)
+    row_idx = 0
+    while row_idx < xl_sheet.nrows:
+        text = xl_sheet.row(row_idx)[0].value
+        if re.search(regbank_top_sheet_info["start_row_header"], text, re.IGNORECASE):
+            row_idx += 1    # Skip first row corresponding to header
+            break
+        else:
+            row_idx += 1
+    if row_idx == xl_sheet.nrows:
+        assert 0, "Invalid sheet"
+
+    while row_idx < xl_sheet.nrows:
+        module_name = xl_sheet.row(regbank_top_sheet_info["module_name_col"])[0].value
+        address_bits = xl_sheet.row(regbank_top_sheet_info["address_bits_col"])[0].value
+        base_address = xl_sheet.row(regbank_top_sheet_info["base_address_col"])[0].value
+        instance_name = xl_sheet.row(regbank_top_sheet_info["instance_name_col"])[0].value
+
+        if module_name=='':
+            break
+        else:
+            # Use the instance information to load sheets
+            print("{0} : {1} : {2} : {3}".format(module_name, address_bits, base_address, instance_name))
+        row_idx += 1
 
 
 if __name__ == "__main__":
@@ -276,7 +323,8 @@ if __name__ == "__main__":
     parser.add_argument('fnames', nargs="+")
     parse_res = parser.parse_args()
     fnames = parse_res.fnames
-    regbank_to_load(fnames[0])
+    regbank_load_excel(fnames[0])
+    regbank_load_instances("demo_regbank")
     regbank_load_sheet("demo_regbank", "Sheet_A", 0x4000000, offsets_enum_t.WORD_OFFSETS)
     regbank_load_sheet("demo_regbank", "Sheet_A", 0x4000400, offsets_enum_t.WORD_OFFSETS, "Sheet_A_1")
 
