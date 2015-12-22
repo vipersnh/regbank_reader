@@ -15,9 +15,6 @@ import code
 
 target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
                                        "max_msg_len", "unique_id", "unique_msg"])
-bitfield_t   = StructDict("bitfield_t", ["value", "mask", 
-                                         "rshift", "end",
-                                         "start"])
 global_env   = dict()
 
 class regbank_reader_model_t (QObject):
@@ -61,10 +58,6 @@ class regbank_reader_model_t (QObject):
         self.target_search_thread.started.connect(self.target_search, 
                 Qt.DirectConnection)
         self.target_search_thread.start()
-        self.keep_alive_thread = QThread()
-        self.keep_alive_thread.started.connect(self.keep_alive, 
-                Qt.DirectConnection)
-        self.keep_alive_thread.start()
 
         # Process the supplied tib_file if any
         if self.tib_file:
@@ -81,11 +74,15 @@ class regbank_reader_model_t (QObject):
         print("Target search thread started")
         count = 0
         while (1):
-            msg = self.client.get_udp_message()
+            msg = self.client.get_udp_message(10)
             if msg and self.target_search_enabled:
                 [protocol, ip_addr, port, max_msg_len, server_unique_id, server_unique_msg] = msg;
                 target = target_t(ip_addr, port, protocol, max_msg_len, int(server_unique_id, 0), server_unique_msg)
                 self.add_new_target(target)
+                self.keep_alive_thread = QThread()
+                self.keep_alive_thread.started.connect(self.keep_alive, 
+                    Qt.DirectConnection)
+                self.keep_alive_thread.start()
             elif self.target_search_enabled:
                 count += 1
                 print("No server found, please start the server. {0} timeouts".format(count))
@@ -124,37 +121,6 @@ class regbank_reader_model_t (QObject):
         self.client.disconnect_server()
         self.signal_target_disconnected.emit()
 
-    def read_address(self, address):
-        if __debug__:
-            return 0xABCDEFAB
-        msg_read = msg_req_t()
-        msg_read.handle = id(address)
-        msg_read.req_type = WORD_READ_REQ
-        msg_read.addr = address
-        resp = self.client.query_server(msg_read)
-        assert(resp.handle==msg_read.handle)
-        if resp.status==STATUS_OK:
-            assert resp.value != None, "Invalid state"
-            return resp.value; # Read success
-        else:
-            set_trace()
-            pass
-            return None;       # Read failed
-
-    def write_address(self, address, value):
-        if __debug__:
-            return True
-        msg_write = msg_req_t()
-        msg_write.handle = id(address)
-        msg_write.req_type = WORD_WRITE_REQ
-        msg_write.addr = address
-        msg_write.value = value
-        resp = self.client.query_server(msg_write)
-        assert(resp.handle==msg_write.handle)
-        if resp.status==STATUS_OK:
-            return True; # Write success
-        else:
-            return False; # Write failed
 
     def display_read_register(self, regbank_name, sheet_name, register_name, subfield_name, value):
         print("Reading {0}.{1}.{2} => ".format(regbank_name, sheet_name, register_name))
@@ -224,15 +190,6 @@ class regbank_reader_model_t (QObject):
 
 model = regbank_reader_model_t()
 
-def get_bitfield_spec(start=0, end=31):
-    bitfield = bitfield_t()
-    bitfield.mask = ((1<<(end+1))) - ((1<<(start)))
-    bitfield.rshift = start
-    bitfield.value = bitfield.mask >> bitfield.rshift
-    bitfield.end   = end
-    bitfield.start = start
-    return bitfield
-    
 
 def parse_tib(tib, tib_file):
     global model
@@ -465,11 +422,11 @@ def initialize():
     global_env["print"] = _print_
 
 ## Exported API
-def connect(unique_id, unique_msg):
+def connect(unique_id, unique_msg, timeout=10):
     model.client.set_server_id(unique_id)
     model.client.set_server_msg(unique_msg)
     while 1:
-        msg = model.client.get_udp_message()
+        msg = model.client.get_udp_message(timeout)
         if msg:
             [protocol, ip_addr, port, max_msg_len, server_unique_id, server_unique_msg] = msg;
             server_unique_id = int(server_unique_id, 0)

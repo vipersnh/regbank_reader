@@ -1,12 +1,16 @@
 from pdb import set_trace
+import threading
+from PyQt4.QtCore import QObject, Qt
 from PyQt4.QtCore import QMutex
+from PyQt4.QtCore import QThread
 from ctypes import *
-import socket;
-import pprint;
-import time;
-import atexit;
+import socket
+import pprint
+import time
+import atexit
+import os
 
-MSG_LEN_FIELD_LEN = 2;
+MSG_LEN_FIELD_LEN = 2
 
 (   
     BYTE_READ_REQ,
@@ -16,14 +20,14 @@ MSG_LEN_FIELD_LEN = 2;
     WORD_READ_REQ,
     WORD_WRITE_REQ,
     KEEP_ALIVE_REQ,
-) = range(7);
+) = range(7)
 
 (
     STATUS_OK,
     STATUS_FAIL,
     STATUS_INVALID,
     STATUS_INCONSISTENT
-) = range(4);
+) = range(4)
 
 
 class msg_resp_t (Structure) :
@@ -44,17 +48,20 @@ class msg_req_t (Structure)  :
                 ("req_type",    c_uint),
                 ("msg",         type_union)]
 
-temp = msg_req_t();
-class client_t:
-    def __init__(self, server_udp_port) :
+class client_t(QObject):
+    def __init__(self, server_udp_port=2222) :
+        super(client_t, self).__init__()
         self.previous_udp_message = []
-        self.server_udp_port = server_udp_port;
-        self.server_connected = False;
-        self.server_socket_handle = None;
-        self.local_ip         = "0.0.0.0";
-        self.server_unique_id = None;
-        self.server_unique_msg = None;
-        self.sync_mutex = QMutex();
+        self.server_udp_port = server_udp_port
+        self.server_connected = False
+        self.server_socket_handle = None
+        self.local_ip         = "0.0.0.0"
+        self.server_unique_id = None
+        self.server_unique_msg = None
+        self.sync_mutex = QMutex()
+
+    def set_server_udp_port(self, server_udp_port):
+        self.server_udp_port = server_udp_port
 
     def set_server_id(self, unique_id):
         self.server_unique_id = unique_id
@@ -62,22 +69,24 @@ class client_t:
     def set_server_msg(self, unique_msg):
         self.server_unique_msg = unique_msg
     
-    def get_udp_message(self, timeout=10) :
+    def get_udp_message(self, timeout) :
         sock = socket.socket(socket.AF_INET, 
-                             socket.SOCK_DGRAM);
-        sock.bind((self.local_ip, self.server_udp_port));
+                             socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        sock.bind((self.local_ip, self.server_udp_port))
         sock.settimeout(timeout)
         ctime = time.time()
         while 1:
             try:
-                data, addr = sock.recvfrom(65535);
+                data, addr = sock.recvfrom(65535)
             except :
                 return None
-            data = data.decode("utf-8");
-            msgs = data.strip().replace(' ', '').split(',');
-            vals = [];
+            data = data.decode("utf-8")
+            msgs = data.strip().replace(' ', '').split(',')
+            vals = []
             for i in msgs :
-                vals.append(i.split(':')[1]);
+                vals.append(i.split(':')[1])
             sock.close()
             del sock
             if int(vals[4],0)==self.server_unique_id and vals[5]==self.server_unique_msg:
@@ -86,39 +95,94 @@ class client_t:
                     assert vals==self.previous_udp_message
 
                 self.previous_udp_message = vals
-                return vals;
+                return vals
             elif time.time() >= ctime + timeout:
                 return None
-                
 
-    def connect_to_server(self, target) :
-        [protocol, ip_addr, port, max_msg_len] = target;
-        self.server_socket_handle = socket.socket(socket.AF_INET, socket.SOCK_STREAM);
-        self.server_socket_handle.connect((ip_addr, int(port)));
-        self.server_connected = True;
-        return [protocol, ip_addr, port, max_msg_len];
-
-    def disconnect_server(self) :
+    def disconnect(self) :
         if self.server_connected:
-            self.server_socket_handle.close();
+            self.server_socket_handle.close()
+            self.server_connected = False
 
     def query_server(self, msg) :
-        self.sync_mutex.lock();
-        msg_bytes = bytearray(msg);
-        msg_len = c_ushort(len(msg_bytes));
-        msg_bytes[:0] = bytes(msg_len);
-        self.server_socket_handle.send(msg_bytes);
-        resp = self.server_socket_handle.recv(MSG_LEN_FIELD_LEN);
-        msg_len = c_ushort.from_buffer(bytearray(resp)).value;
-        resp = self.server_socket_handle.recv(msg_len);
-        resp_struct = msg_resp_t.from_buffer(bytearray(resp));
-#        self.print_resp(resp_struct);
-        self.sync_mutex.unlock();
-        return resp_struct;
+        assert self.server_connected
+        self.sync_mutex.lock()
+        msg_bytes = bytearray(msg)
+        msg_len = c_ushort(len(msg_bytes))
+        msg_bytes[:0] = bytes(msg_len)
+        self.server_socket_handle.send(msg_bytes)
+        resp = self.server_socket_handle.recv(MSG_LEN_FIELD_LEN)
+        msg_len = c_ushort.from_buffer(bytearray(resp)).value
+        resp = self.server_socket_handle.recv(msg_len)
+        resp_struct = msg_resp_t.from_buffer(bytearray(resp))
+        self.sync_mutex.unlock()
+        return resp_struct
     
     def print_resp(self, resp) :
         if resp.req_type==KEEP_ALIVE_REQ:
-            return;
+            return
         for field_name, field_type in resp._fields_ :
-            print(field_name ," : ", getattr(resp, field_name));
+            print(field_name ," : ", getattr(resp, field_name))
 
+    def keep_alive(self):
+        print("Keep alive thread started")
+        while(self.server_connected):
+            msg_write = msg_req_t()
+            msg_write.handle = 0xABCDFABC
+            msg_write.req_type = KEEP_ALIVE_REQ
+            msg_write.addr = 0x00
+            msg_write.value = 0x00
+            resp = self.query_server(msg_write)
+            time.sleep(5)
+        del self.keep_alive_thread
+
+    def connect(self, unique_id, unique_msg, timeout):
+        self.set_server_id(unique_id)
+        self.set_server_msg(unique_msg)
+        while 1:
+            msg = self.get_udp_message(timeout)
+            if msg:
+                [protocol, ip_addr, port, max_msg_len, server_unique_id, server_unique_msg] = msg
+                server_unique_id = int(server_unique_id, 0)
+                self.server_socket_handle = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.server_socket_handle.connect((ip_addr, int(port)))
+                self.server_connected = True
+                self.keep_alive_thread = threading.Thread(target=self.keep_alive)
+                self.keep_alive_thread.start()
+                break
+            else:
+                print("No server found, please start the server.")
+                break
+
+    def read_address(self, address):
+        if __debug__:
+            return 0xABCDEFAB
+        msg_read = msg_req_t()
+        msg_read.handle = id(address)
+        msg_read.req_type = WORD_READ_REQ
+        msg_read.addr = address
+        resp = self.query_server(msg_read)
+        assert(resp.handle==msg_read.handle)
+        if resp.status==STATUS_OK:
+            assert resp.value != None, "Invalid state"
+            return resp.value # Read success
+        else:
+            set_trace()
+            return None       # Read failed
+
+    def write_address(self, address, value):
+        if __debug__:
+            return True
+        msg_write = msg_req_t()
+        msg_write.handle = id(address)
+        msg_write.req_type = WORD_WRITE_REQ
+        msg_write.addr = address
+        msg_write.value = value
+        resp = self.query_server(msg_write)
+        assert(resp.handle==msg_write.handle)
+        if resp.status==STATUS_OK:
+            return True # Write success
+        else:
+            return False # Write failed
+
+client = client_t()

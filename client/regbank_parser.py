@@ -5,16 +5,128 @@ from pdb import set_trace
 from collections import namedtuple, OrderedDict
 from StructDict import StructDict
 import enumeration
+from client import client
 
 class offsets_enum_t(enumeration.Enum):
     BYTE_OFFSETS = 0
     WORD_OFFSETS = 1
 
+bitfield_t   = StructDict("bitfield_t", ["value", "mask", 
+                                         "rshift", "end",
+                                         "start"])
 
-subfield_t      = StructDict("subfield_t", ["name", "bit_width", "bit_position", "sw_attr", 
-                                            "hw_attr", "default_val", "description", "value"])
-register_t      = StructDict("register_t", ["regbank_name", "sheet_name", "register_name", "offset_addr", "subfields", "value"])
-sheet_t         = StructDict("sheet_t",    ["regbank_name", "sheet_name", "base_addr", "start_addr", "end_addr", "offset_type", "registers"])
+class bitfield_t:
+    def __init__(self, start=0, end=31):
+        self.mask = ((1<<(end+1))) - ((1<<(start)))
+        self.rshift = start
+        self.value = bitfield.mask >> bitfield.rshift
+        self.end   = end
+        self.start = start
+ 
+class sheet_t:
+    def __init__(self, sheet_name, regbank_name, base_address, offset_type=offsets_enum_t.BYTE_OFFSETS):
+        self._initialized = False
+        self._sheet_name = sheet_name
+        self._regbank_name = regbank_name
+        self._base_addr = base_address
+        self._offset_type = offset_type
+        self._registers_db = dict()
+        self._initialized = True
+
+    def __getattr__(self, item):
+        if re.search("^_", item):
+            return getattr(self, item)
+        else:
+            return getattr(self, "_registers_db")[item]
+    
+    def __setattr__(self, item, value):
+        if re.search("^_", item) and self._initialized:
+            raise ValueError('This attribute cant be set outside of init')
+        else:
+            getattr(self, "_registers_db")[item] = value
+
+class register_t:
+    def __init__(self, sheet, register_name, sheet_name, regbank_name, offset_addr, default_val, subfields):
+        self._sheet = sheet
+        self.register_name = register_name
+        self._sheet_name = sheet_name
+        self._regbank_name = regbank_name
+        self.offset_addr = offset_addr
+        self.default_val = default_val
+        self.subfields = subfields
+
+        self.stored_value = default_val
+
+    def get_addr(self):
+        return self._sheet.base_addr + self.offset_addr * (1 if self._sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)
+
+    def update_value(self):
+        u32_value = self.value
+        setattr(self, "stored_value", self.value)
+        for subfield in self.subfields:
+            subfield.update_u32(self.stored_value)
+
+    def update_value_from_subfields(self):
+        u32_value = 0
+        for subfield in self.subfields:
+            u32_value |= subfield.stored_value<<self.bitfield.rshift
+        self.value = u32_value
+
+    def __getattr__(self, item):
+        if item=='value':
+            value = client.read_address(self.get_addr())
+            setattr(self, "stored_value", value)
+            return value
+        else:
+            return getattr(self, item)
+
+    def __setattr__(self, item, value):
+        if item=='value':
+            self.client.write_address(self.get_addr(), value)
+            self.update_value()
+        else:
+            raise ValueError('This attribute cant be set outside of init')
+
+class subfield_t:
+    def __init__(self, register, subfield_name, register_name, sheet_name, regbank_name, bit_width, bit_position, sw_attr, hw_attr, default_val, description):
+        self._register = register
+        self.subfield_name = subfield_name
+        self._register_name = register_name
+        self._sheet_name = sheet_name
+        self._regbank_name = regbank_name
+        self.bit_width = bit_width
+        self.bit_position = bit_position
+        self.sw_attr = sw_attr
+        self.hw_attr = hw_attr
+        self.default_val = default_val
+        self.description = description
+
+        self.stored_value = default_val
+        self.bitfield = bitfield_t(self.bit_position[0], self.bit_position[-1])
+
+        self.initialized = True
+
+    def update_u32(self, u32_value):
+        setattr(self, "stored_value", (u32_value&self.bitfield.mask)>>self.bitfield.rshift)
+    
+    def __getattr__(self, item):
+        if item=='value':
+            self._register.update_value()
+            return self.stored_value
+        else:
+            return getattr(self, item)
+
+    def __setattr__(self, item, value):
+        if item=='value':
+            self._register.update_value()
+            setattr(self, "stored_value", value)
+            self._register.update_value_from_subfields()
+            
+
+#subfield_t      = StructDict("subfield_t", ["name", "bit_width", "bit_position", "sw_attr", 
+#                                            "hw_attr", "default_val", "description", "value"])
+#register_t      = StructDict("register_t", ["regbank_name", "sheet_name", "register_name", "offset_addr", "subfields", "value"])
+#sheet_t         = StructDict("sheet_t",    ["regbank_name", "sheet_name", "base_addr", "start_addr", "end_addr", "offset_type", "registers"])
 ## Register Access from  db
 #  db["regbank"]["sheet"]["register"] = 
 db              = OrderedDict()
@@ -39,7 +151,8 @@ regbank_top_sheet_info =  {
       "module_name_col"     : 0,
       "address_bits_col"    : 1,
       "base_address_col"    : 2,
-      "instance_name_col"   : 3
+      "offset_size_col"     : 3,
+      "instance_name_col"   : 4
     };
 
 
@@ -303,18 +416,21 @@ def regbank_load_instances(regbank_name):
         assert 0, "Invalid sheet"
 
     while row_idx < xl_sheet.nrows:
-        module_name = xl_sheet.row(regbank_top_sheet_info["module_name_col"])[0].value
-        address_bits = xl_sheet.row(regbank_top_sheet_info["address_bits_col"])[0].value
-        base_address = xl_sheet.row(regbank_top_sheet_info["base_address_col"])[0].value
-        instance_name = xl_sheet.row(regbank_top_sheet_info["instance_name_col"])[0].value
-
+        module_name = str(xl_sheet.row(row_idx)[regbank_top_sheet_info["module_name_col"]].value)
         if module_name=='':
             break
-        else:
-            # Use the instance information to load sheets
-            print("{0} : {1} : {2} : {3}".format(module_name, address_bits, base_address, instance_name))
+
+        address_bits = int(float(str(xl_sheet.row(row_idx)[regbank_top_sheet_info["address_bits_col"]].value)))
+        base_address = int(str(xl_sheet.row(row_idx)[regbank_top_sheet_info["base_address_col"]].value), 0)
+        offset_size = int(float(str(xl_sheet.row(row_idx)[regbank_top_sheet_info["offset_size_col"]].value)))
+        instance_name = str(xl_sheet.row(row_idx)[regbank_top_sheet_info["instance_name_col"]].value)
+
         row_idx += 1
 
+        # Use the instance information to load sheets
+        regbank_load_sheet(regbank_name, module_name, base_address, 
+            offsets_enum_t.WORD_OFFSETS if offset_size==4 else offsets_enum_t.BYTE_OFFSETS, instance_name)
+        
 
 if __name__ == "__main__":
     import os

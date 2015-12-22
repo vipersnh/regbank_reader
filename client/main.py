@@ -28,7 +28,7 @@ def get_number_from_string(string):
         return None
         
 def get_string_from_number(number):
-    string = "0x{0:04X}_{0:04X}".format((number & 0xFFFF0000)>>16, number&0xFFFF)
+    string = "0x{0:04X}_{1:04X}".format((number & 0xFFFF0000)>>16, number&0xFFFF)
     return string
 
 class register_table_t (QWidget, Ui_register_tab, QObject) :
@@ -265,21 +265,7 @@ class regbank_reader_gui_controller_t(QObject):
 
         # Regbank Initialization Section
         self.gui.pushButton_loadRegBank.setEnabled(False)
-        self.gui.comboBox_regbankSelect.setEditable(True)
-        self.gui.comboBox_regbankSelect.lineEdit().setAlignment(Qt.AlignCenter)
-        self.gui.comboBox_regbankSelect.lineEdit().setReadOnly(True)
-        self.gui.comboBox_sheetSelect.setEditable(True)
-        self.gui.comboBox_sheetSelect.lineEdit().setAlignment(Qt.AlignCenter)
-        self.gui.comboBox_sheetSelect.lineEdit().setReadOnly(True)
-        self.gui.comboBox_sheetOffsets.setEditable(True)
-        self.gui.comboBox_sheetOffsets.lineEdit().setAlignment(Qt.AlignCenter)
-        self.gui.comboBox_sheetOffsets.lineEdit().setReadOnly(True)
-        self.gui.comboBox_sheetOffsets.addItem("BYTE_OFFSETS")
-        self.gui.comboBox_sheetOffsets.addItem("WORD_OFFSETS")
         self.gui.pushButton_loadRegBank.clicked.connect(self.slot_gui_load_regbank)
-        self.gui.pushButton_loadSheet.clicked.connect(self.slot_gui_load_sheet)
-        self.gui.comboBox_regbankSelect.currentIndexChanged.connect(self.slot_gui_regbank_changed)
-        self.gui.comboBox_sheetSelect.currentIndexChanged.connect(self.slot_gui_regbank_sheet_changed)
         self.gui.comboBox_loadedSheetOffsetSel.addItem("BYTE_OFFSETS")
         self.gui.comboBox_loadedSheetOffsetSel.addItem("WORD_OFFSETS")
         self.gui.lineEdit_loadedCalcAddr.setReadOnly(True)
@@ -404,7 +390,6 @@ class regbank_reader_gui_controller_t(QObject):
 
     def slot_gui_target_connected(self, target):
         self.gui.pushButton_loadRegBank.setEnabled(True)
-        self.gui.pushButton_loadSheet.setEnabled(True)
         self.gui.pushButton_loadTibFile.setEnabled(True)
 
         self.gui.pushButton_getCurrRegisterAddr.setEnabled(True)
@@ -419,7 +404,6 @@ class regbank_reader_gui_controller_t(QObject):
 
     def slot_gui_target_disconnected(self):
         self.gui.pushButton_loadRegBank.setEnabled(False)
-        self.gui.pushButton_loadSheet.setEnabled(False)
         self.gui.pushButton_loadTibFile.setEnabled(False)
 
         self.gui.pushButton_getCurrRegisterAddr.setEnabled(False)
@@ -441,55 +425,6 @@ class regbank_reader_gui_controller_t(QObject):
             if fname not in self.regbanks_path_list.values():
                 self.regbanks_path_list[regbank_name] = fname
                 load_regbank(fname)
-                self.gui.comboBox_regbankSelect.addItem(regbank_name)
-
-    def slot_gui_regbank_sheet_changed(self):
-        name = self.gui.comboBox_sheetSelect.currentText()
-        self.gui.lineEdit_asSheetName.setText(name)
-        regbank_name = self.gui.comboBox_regbankSelect.currentText()
-        try:
-            sheet_name   = name
-            predicted_offset = self.model.get_sheet_offsets(regbank_name, sheet_name)
-            self.gui.comboBox_sheetOffsets.setCurrentIndex(0 if predicted_offset==0 else 1)
-        except:
-            sheet_name = self.gui.lineEdit_asSheetName.text()
-            predicted_offset = self.model.get_sheet_offsets(regbank_name, sheet_name)
-            self.gui.comboBox_sheetOffsets.setCurrentIndex(0 if predicted_offset==0 else 1)
-
-
-
-    def slot_gui_load_sheet(self):
-        regbank_name = self.gui.comboBox_regbankSelect.currentText()
-        sheet_name = self.gui.comboBox_sheetSelect.currentText()
-        as_sheet_name = self.gui.lineEdit_asSheetName.text()
-        base_addr = get_number_from_string(self.gui.lineEdit_sheetLoadAddress.text())
-        if base_addr is not None:
-            base_addr = (base_addr)
-            offset_size = 1 if self.gui.comboBox_sheetOffsets.currentIndex()==0 else 4
-            if as_sheet_name==sheet_name :
-                as_sheet_name = None
-            load_sheet(getattr(model.db_dict[regbank_name], sheet_name), base_addr, offset_size, as_sheet_name)
-        else:
-            # Warn about invalid base_addr
-            msgBox = QMessageBox(QMessageBox.Warning, "...",  "Invalid \"At Address\" specified")
-            msgBox.setStandardButtons(QMessageBox.Ok);
-            msgBox.exec_()
-
-    def slot_gui_regbank_changed(self):
-        regbank_name = self.gui.comboBox_regbankSelect.currentText()
-        try:
-            fname = self.regbanks_path_list[regbank_name]
-        except:
-            set_trace()
-        workbook = xlrd.open_workbook(fname)
-        sheet_names = workbook.sheet_names()
-        self.gui.comboBox_sheetSelect.blockSignals(True)
-        self.gui.comboBox_sheetSelect.clear()
-        for sheet_name in sheet_names:
-            if is_regbank_sheet_valid(regbank_name, sheet_name):
-                self.gui.comboBox_sheetSelect.addItem(sheet_name)
-        self.gui.comboBox_sheetSelect.blockSignals(False)
-        self.slot_gui_regbank_sheet_changed()
 
     # Memory editor related slots
     def slot_gui_memEditor_update_value(self, value):
