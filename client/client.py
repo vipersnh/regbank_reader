@@ -59,6 +59,8 @@ class client_t(QObject):
         self.server_unique_id = None
         self.server_unique_msg = None
         self.sync_mutex = QMutex()
+        if __debug__:
+            self._stored_value = 0x00
 
     def set_server_udp_port(self, server_udp_port):
         self.server_udp_port = server_udp_port
@@ -156,7 +158,7 @@ class client_t(QObject):
 
     def read_address(self, address):
         if __debug__:
-            return 0xABCDEFAB
+            return self._stored_value
         msg_read = msg_req_t()
         msg_read.handle = id(address)
         msg_read.req_type = WORD_READ_REQ
@@ -172,6 +174,7 @@ class client_t(QObject):
 
     def write_address(self, address, value):
         if __debug__:
+            self._stored_value = value
             return True
         msg_write = msg_req_t()
         msg_write.handle = id(address)
