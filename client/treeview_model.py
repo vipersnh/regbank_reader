@@ -199,11 +199,20 @@ class treeview_t(QtGui.QTreeView):
 
 if __name__ == '__main__':
     import sys
+    import argparse
     from regbank_parser import *
     QtCore.pyqtRemoveInputHook()
     app = QtGui.QApplication(sys.argv)
-    f = "../examples/regbank_sheet_examples/demo_regbank.xlsx"
-    demo = regbank_t(f, "demo")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', nargs=2, 
+        help="Use specified excel sheet with regbank name")
+    parser.add_argument('-u_id', nargs=1, help="Unique ID of target")
+    parser.add_argument('-u_msg', nargs=1, help="Unique MSG of target")
+    parse_res = parser.parse_args()
+    f = parse_res.f
+    u_id = parse_res.u_id
+    u_msg = parse_res.u_msg
+    demo = regbank_t(f[0], f[1])
     treemodel = treeview_model_t(g_headers, app)
     treemodel.set_regbanks(g_regbanks)
     view = treeview_t()

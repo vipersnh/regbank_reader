@@ -2,6 +2,7 @@ from pdb import set_trace
 import threading
 from PyQt4.QtCore import QObject, Qt
 from PyQt4.QtCore import QMutex
+from PyQt4.QtCore import pyqtSignal
 from PyQt4.QtCore import QThread
 from ctypes import *
 import socket
@@ -49,6 +50,9 @@ class msg_req_t (Structure)  :
                 ("msg",         type_union)]
 
 class client_t(QObject):
+    # Signals
+    signal_disconnected = pyqtSignal()
+
     def __init__(self, server_udp_port=2222) :
         super(client_t, self).__init__()
         self.previous_udp_message = []
@@ -105,6 +109,7 @@ class client_t(QObject):
         if self.server_connected:
             self.server_socket_handle.close()
             self.server_connected = False
+            self.signal_disconnected.emit()
 
     def query_server(self, msg) :
         assert self.server_connected
@@ -134,7 +139,10 @@ class client_t(QObject):
             msg_write.req_type = KEEP_ALIVE_REQ
             msg_write.addr = 0x00
             msg_write.value = 0x00
-            resp = self.query_server(msg_write)
+            try:
+                resp = self.query_server(msg_write)
+            except:
+                self.disconnect()
             time.sleep(5)
         del self.keep_alive_thread
 
@@ -163,7 +171,11 @@ class client_t(QObject):
         msg_read.handle = id(address)
         msg_read.req_type = WORD_READ_REQ
         msg_read.addr = address
-        resp = self.query_server(msg_read)
+        try:
+            resp = self.query_server(msg_read)
+        except:
+            self.disconnect()
+            return 0
         assert(resp.handle==msg_read.handle)
         if resp.status==STATUS_OK:
             assert resp.value != None, "Invalid state"
@@ -181,7 +193,11 @@ class client_t(QObject):
         msg_write.req_type = WORD_WRITE_REQ
         msg_write.addr = address
         msg_write.value = value
-        resp = self.query_server(msg_write)
+        try:
+            resp = self.query_server(msg_write)
+        except:
+            self.disconnect()
+            return False
         assert(resp.handle==msg_write.handle)
         if resp.status==STATUS_OK:
             return True # Write success
