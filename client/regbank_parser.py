@@ -6,7 +6,6 @@ from collections import namedtuple, OrderedDict
 from StructDict import StructDict
 import enumeration
 from client import client
-from math import log2
 
 g_regbanks = OrderedDict()
 
@@ -134,7 +133,7 @@ class register_t(base_t):
         return list(self._subfields_db.values())[index]
 
     def __dir__(self):
-        return self._subfields_db.keys()
+        return list(self._subfields_db.keys())
 
     def _get_addr(self):
         return self._module_instance._get_base_addr() + \
@@ -216,7 +215,7 @@ class module_instance_t(base_t):
         return list(self._registers_db.values())[index]
 
     def __dir__(self):
-        return self._registers_db.keys()
+        return list(self._registers_db.keys())
 
     def __getattr__(self, item):
         if self._is_special_attr(item):
@@ -429,7 +428,7 @@ class regbank_t:
             self._module_instances[module_instance_name] = module_instance
 
     def __dir__(self):
-        return self._module_instances.keys()
+        return list(self._module_instances.keys())
 
 
 if __name__ == "__main__":

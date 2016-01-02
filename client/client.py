@@ -120,8 +120,12 @@ class client_t(QObject):
         self.server_socket_handle.send(msg_bytes)
         resp = self.server_socket_handle.recv(MSG_LEN_FIELD_LEN)
         msg_len = c_ushort.from_buffer(bytearray(resp)).value
-        resp = self.server_socket_handle.recv(msg_len)
-        resp_struct = msg_resp_t.from_buffer(bytearray(resp))
+        self.server_socket_handle.settimeout(2)
+        try:
+            resp = self.server_socket_handle.recv(msg_len)
+            resp_struct = msg_resp_t.from_buffer(bytearray(resp))
+        else:
+            resp_struct = None
         self.sync_mutex.unlock()
         return resp_struct
     
@@ -139,11 +143,11 @@ class client_t(QObject):
             msg_write.req_type = KEEP_ALIVE_REQ
             msg_write.addr = 0x00
             msg_write.value = 0x00
-            try:
-                resp = self.query_server(msg_write)
-            except:
+            resp = self.query_server(msg_write)
+            if resp:
+                time.sleep(1)
+            else:
                 self.disconnect()
-            time.sleep(5)
         del self.keep_alive_thread
 
     def connect(self, unique_id, unique_msg, timeout):
