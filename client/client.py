@@ -124,7 +124,7 @@ class client_t(QObject):
         try:
             resp = self.server_socket_handle.recv(msg_len)
             resp_struct = msg_resp_t.from_buffer(bytearray(resp))
-        else:
+        except:
             resp_struct = None
         self.sync_mutex.unlock()
         return resp_struct

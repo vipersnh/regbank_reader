@@ -70,7 +70,11 @@ class subfield_t(base_t):
         else:
             self._stored_value = 0
         self._bitfield = bitfield_t(self._bit_position[0], self._bit_position[-1])
+        self._temp_value_ = 0
         self._initialized = True
+
+    def __dir__(self):
+        return ['_value', '_stored_value', '_temp_value']
 
     def __len__(self):
         return 1
@@ -78,8 +82,11 @@ class subfield_t(base_t):
     def __getitem__(self, index):
         return None
 
-    def _update_using_value(self, value):
-        self._stored_value = (value & self._bitfield.mask)>>self._bitfield.rshift
+    def _update_using_value(self, value, is_temp_value=False):
+        if is_temp_value:
+            self._temp_value_ = (value & self._bitfield.mask)>>self._bitfield.rshift
+        else:
+            self._stored_value = (value & self._bitfield.mask)>>self._bitfield.rshift
     
     def __getattr__(self, item):
         if item=='_value':
@@ -87,7 +94,10 @@ class subfield_t(base_t):
             return self._stored_value
         else:
             if self._is_special_attr(item):
-                return self.__dict__[item]
+                if item=='_temp_value':
+                    return self.__dict__['_temp_value_']
+                else:
+                    return self.__dict__[item]
             else:
                 return None
 
@@ -102,9 +112,13 @@ class subfield_t(base_t):
                     self._register._get_hw_value() # Update current value
                     self._stored_value = value & self._bitfield.value     # Set the subfield value to desired
                     self._register._update_value_from_subfields()   # Form full word from subfields and write to hw 
-                elif item=='_stored_value':
+                elif item=='_stored_value' or item=='_temp_value_':
                     dict.__setattr__(self, item, value)
+                elif item=='_temp_value':
+                    self._temp_value_ = value & self._bitfield.value     # Set the subfield value to desired
+                    self._register._update_value_from_subfields(is_temp_value=True)   # Form full word from subfields and write to hw 
             else:
+                set_trace()
                 raise ValueError('This attribute cant be set outside of init')
         else:
             dict.__setattr__(self, item, value)
@@ -123,7 +137,7 @@ class register_t(base_t):
             self._stored_value = default_val
         else:
             self._stored_value = 0
-
+        self._temp_value_ = 0
         self._initialized = True
 
     def __len__(self):
@@ -133,7 +147,7 @@ class register_t(base_t):
         return list(self._subfields_db.values())[index]
 
     def __dir__(self):
-        return list(self._subfields_db.keys())
+        return list(self._subfields_db.keys()) + ['_value', '_stored_value', '_temp_value']
 
     def _get_addr(self):
         return self._module_instance._get_base_addr() + \
@@ -155,16 +169,28 @@ class register_t(base_t):
         client.write_address(self._get_addr(), value)
         self._update_all_values(value)
 
-    def _update_all_values(self, value):
-        self._stored_value = value
-        for subfield in self._subfields_db.values():
-            subfield._update_using_value(self._stored_value)
+    def _update_all_values(self, value, is_temp_value=False):
+        if is_temp_value:
+            self._temp_value_ = value
+            for subfield in self._subfields_db.values():
+                subfield._update_using_value(self._temp_value_, True)
+        else:
+            self._stored_value = value
+            for subfield in self._subfields_db.values():
+                subfield._update_using_value(self._stored_value, False)
 
-    def _update_value_from_subfields(self):
+    def _update_value_from_subfields(self, is_temp_value=False):
         value = 0
         for subfield in self._subfields_db.values():
-            value |= subfield._stored_value<<subfield._bitfield.rshift
-        self._set_hw_value(value)
+            if is_temp_value:
+                value |= subfield._temp_value_<<subfield._bitfield.rshift
+            else:
+                value |= subfield._stored_value<<subfield._bitfield.rshift
+        
+        if is_temp_value:
+            self._temp_value_ = value
+        else:
+            self._set_hw_value(value)
 
     def __getattr__(self, item):
         if item=='_value':
@@ -173,7 +199,10 @@ class register_t(base_t):
             return value
         else:
             if self._is_special_attr(item):
-                return self.__dict__[item]
+                if item=='_temp_value':
+                    return self._temp_value_
+                else:
+                    return self.__dict__[item]
             else:
                 return self._subfields_db[item]
 
@@ -187,9 +216,12 @@ class register_t(base_t):
             if self._is_special_attr(item):
                 if item=='_value':
                     self._set_hw_value(value)
-                elif item=='_stored_value':
+                elif item=='_stored_value' or item=='_temp_value_':
                     dict.__setattr__(self, item, value)
+                elif item=='_temp_value':
+                    self._update_all_values(value, True)
                 else:
+                    set_trace()
                     raise ValueError('This attribute cant be set outside of init')
             else:
                 assert item not in self._subfields_db.keys()
@@ -206,7 +238,12 @@ class module_instance_t(base_t):
         self._base_addr = base_address
         self._offset_type = offset_type
         self._registers_db = OrderedDict()
+        self._size = 0
         self._initialized = True
+
+    def _set_size(self, size):
+        dict.__setattr__(self, '_size', size)
+        
 
     def __len__(self):
         return len(self._registers_db)
@@ -233,6 +270,7 @@ class module_instance_t(base_t):
             initialized = False
         if initialized:
             if self._is_special_attr(item):
+                set_trace()
                 raise ValueError('This attribute cant be set outside of init')
             else:
                 assert item not in self._registers_db.keys()
@@ -255,6 +293,60 @@ class regbank_t:
         self._initialized = True
         self._regbank_load_module_instances()
         g_regbanks[regbank_name] = self
+
+    def connect(self, unique_id, unique_msg, timeout):
+        return client.connect(unique_id, unique_msg, timeout)
+
+    def disconnect(self):
+        return client.disconnect()
+
+    def read_address(addr):
+        return client.read_address(addr)
+
+    def write_address(addr, value):
+        return client.write_address(addr, value)
+
+    def get_write_sequence(self, addr, value):
+        # Should return a list of python executable statements which functionally represent the same as
+        # writing to that addr with value
+
+        seq = list()
+
+        wr_register = None
+
+        # Find the instance in which the write exists
+        for instance in self._module_instances.values():
+            if addr >= instance._base_addr and addr < (instance._base_addr + instance._size):
+                # Find the register in the current sheet if it is part of that sheet
+                for register in instance._registers_db.values():
+                    if register._get_addr()==addr:
+                        wr_register = register
+                        break
+            if wr_register:
+                break
+        
+        if wr_register:
+            wr_register._temp_value = value
+            if 0:
+                seq.append("{0}.{1}.{2}._value = {3}    # @ {4} = {3}".format(wr_register._regbank_name,
+                    wr_register._module_instance_name, wr_register._register_name,
+                    hex(value), hex(wr_register._get_addr())));
+            else:
+                for subfield in wr_register._subfields_db.values():
+                    try:
+                        seq.append("{0}.{1}.{2}.{3}._value = {4}    # @ {5} [{6}:{7}] = {4}".format(
+                            subfield._regbank_name, subfield._module_instance_name, subfield._register_name,
+                            subfield._subfield_name, hex(subfield._temp_value),
+                            hex(wr_register._get_addr()), subfield._bit_position[-1],
+                            subfield._bit_position[0]))
+                    except:
+                        set_trace()
+                        pass
+        else:
+            seq.append("{0}.write_address({1}, {2})".format(self._regbank_name, hex(addr), hex(value)))
+        
+        return seq
+
 
     def __len__(self):
         return len(self._module_instances)
@@ -342,11 +434,10 @@ class regbank_t:
             except:
                 set_trace()
                 pass
-            if not is_reserved:
-                setattr(register, subfield_name, 
-                    subfield_t(register, subfield_name, register_name, 
-                    module_instance_name, regbank_name, bit_width, bit_position, 
-                    sw_attr, hw_attr, default_val, description));
+            setattr(register, subfield_name, 
+                subfield_t(register, subfield_name, register_name, 
+                module_instance_name, regbank_name, bit_width, bit_position, 
+                sw_attr, hw_attr, default_val, description));
         if register_name=='':
             return [None, None]
         else:
@@ -385,6 +476,7 @@ class regbank_t:
                         module_instance_name, self._regbank_name)
             if register:
                 setattr(module_instance, register_name, register)
+                module_instance._set_size(register._get_offset()+4)
             if row_idx>=xl_sheet.nrows :
                 break
         return module_instance
