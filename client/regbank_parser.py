@@ -1,11 +1,11 @@
-import xlrd
 import re
+import pickle
 from os.path import basename, splitext
 from pdb import set_trace
 from collections import namedtuple, OrderedDict
 from StructDict import StructDict
+from client import g_client_obj, target_t
 import enumeration
-from client import client
 
 g_regbanks = OrderedDict()
 
@@ -13,27 +13,37 @@ class offsets_enum_t(enumeration.Enum):
     BYTE_OFFSETS = 0
     WORD_OFFSETS = 1
 
-## Columns information
-regbank_modules_info = {"start_row_header"   :"Offset address",
-                "offset_address_col" :0,
-                "register_name_col"  :1,
-                "sub_field_name_col" :2,
-                "bit_width_col"      :3,
-                "bit_position_col"   :4,
-                "sw_attr_col"        :5,
-                "hw_attr_col"        :6,
-                "default_value_col"  :7,
-                "description_col"    :8,
-                "reserved_keyword"   :"RESERVED"};
+subfield_info_t = namedtuple("subfield_info_t", 
+        [   "subfield_name", 
+            "bit_width", 
+            "bit_position", 
+            "default_val", 
+            "sw_attr", 
+            "hw_attr", 
+            "description",
+            ])
 
-regbank_instances_info =  {
-      "start_row_header"    : "Module",
-      "module_name_col"     : 0,
-      "address_bits_col"    : 1,
-      "base_address_col"    : 2,
-      "offset_size_col"     : 3,
-      "instance_name_col"   : 4
-    };
+register_info_t = namedtuple("register_info_t",
+        [   "register_name",
+            "offset_addr",
+            "default_val",
+            "subfields",
+            ])
+
+module_info_t = namedtuple("module_info_t",
+        [   "module_name",
+            "module_instance_name",
+            "base_addr",
+            "offset_type",
+            "size",
+            "registers",
+            ])
+
+regbank_info_t = namedtuple("regbank_info_t",
+        [   "regbank_name",
+            "regbank_file_name",
+            "modules",
+            ])
 
 class bitfield_t:
     def __init__(self, start=0, end=31):
@@ -157,7 +167,7 @@ class register_t(base_t):
         return self._offset_addr * self._module_instance._get_offset_size()
 
     def _get_hw_value(self):
-        value = client.read_address(self._get_addr())
+        value = g_client_obj.read_address(self._get_addr())
         self._update_all_values(value)
         return value
     
@@ -166,7 +176,7 @@ class register_t(base_t):
         for subfield in self._subfields_db.values():
             mask |= subfield._bitfield.mask
         value = value & mask
-        client.write_address(self._get_addr(), value)
+        g_client_obj.write_address(self._get_addr(), value)
         self._update_all_values(value)
 
     def _update_all_values(self, value, is_temp_value=False):
@@ -194,7 +204,7 @@ class register_t(base_t):
 
     def __getattr__(self, item):
         if item=='_value':
-            value = client.read_address(self._get_addr())
+            value = g_client_obj.read_address(self._get_addr())
             self._update_all_values(value)
             return value
         else:
@@ -273,7 +283,10 @@ class module_instance_t(base_t):
                 set_trace()
                 raise ValueError('This attribute cant be set outside of init')
             else:
-                assert item not in self._registers_db.keys()
+                try:
+                    assert item not in self._registers_db.keys()
+                except:
+                    set_trace()
                 self._registers_db[item] = value
         else:
             dict.__setattr__(self, item, value)
@@ -285,32 +298,62 @@ class module_instance_t(base_t):
         return 1 if self._offset_type==offsets_enum_t.BYTE_OFFSETS else 4
 
 class regbank_t:
-    def __init__(self, regbank_file_name, regbank_name):
+    def __init__(self, regbank_db_fname):
+        database = pickle.load(open(regbank_db_fname, "rb"))
+        print("Reading register bank database {0}".format(database.regbank_name))
         self._initialized = False
-        self._regbank_name = regbank_name
-        self._regbank_file_name = regbank_file_name
+        self._regbank_name = database.regbank_name
+        self._regbank_file_name = database.regbank_file_name
         self._module_instances = OrderedDict()
         self._initialized = True
-        self._regbank_load_module_instances()
-        g_regbanks[regbank_name] = self
+        self._regbank_load_module_instances_from_database(database)
+        g_regbanks[database.regbank_name] = self
 
     def connect(self, unique_id, unique_msg, timeout):
-        return client.connect(unique_id, unique_msg, timeout)
+        print("Connecting to target with unique_id:{0} unique_msg:{1}".format(unique_id, unique_msg))
+        return g_client_obj.connect(unique_id, unique_msg, timeout)
 
     def disconnect(self):
-        return client.disconnect()
+        return g_client_obj.disconnect()
 
-    def read_address(addr):
-        return client.read_address(addr)
+    def rw(self, addr, value=None):
+        if value==None:
+            # Read command
+            # TODO: Handle 64 bit address
+            if addr & ~0xFFFFFFFF:
+                print("Address is beyond 32 bits")
+                return False
+            val = g_client_obj.read_address(addr)
+            return [val, hex(val), bin(val)]
+        else:
+            return g_client_obj.write_address(addr, value)
 
-    def write_address(addr, value):
-        return client.write_address(addr, value)
+    def read_address(self, addr):
+        return g_client_obj.read_address(addr)
 
-    def get_write_sequence(self, addr, value):
+    def write_address(self, addr, value):
+        return g_client_obj.write_address(addr, value)
+
+    def get_read_sequence(self, addr, comment):
+        [register, _] = self.get_write_sequence(addr, 0x00, comment)
+        seq = list()
+        if comment:
+            seq.append("#"+comment)
+        if register:
+            seq.append("print({0}.{1}.{2}._value) # @ {3}".format(register._regbank_name,
+                register._module_instance_name, register._register_name, hex(register._get_addr()), comment))
+        else:
+            seq.append("{0}.read_address({1})".format(self._regbank_name, hex(addr)))
+        return [register, seq]
+
+
+    def get_write_sequence(self, addr, value, comment=None):
         # Should return a list of python executable statements which functionally represent the same as
         # writing to that addr with value
 
         seq = list()
+        if comment:
+            seq.append("#"+comment)
 
         wr_register = None
 
@@ -345,7 +388,7 @@ class regbank_t:
         else:
             seq.append("{0}.write_address({1}, {2})".format(self._regbank_name, hex(addr), hex(value)))
         
-        return seq
+        return [wr_register, seq]
 
 
     def __len__(self):
@@ -377,148 +420,36 @@ class regbank_t:
         else:
             return True
 
-    def _regbank_offset_size_predict(module_instance_ref):
-        assert 0
-        diffs = {1:0, 4:0}
-        register_names = list(sheet.registers.keys())
-        for register_idx in range(len(sheet.registers)-1):
-            offset_diff =  \
-                sheet.registers[register_names[register_idx+1]].offset_addr - \
-                sheet.registers[register_names[register_idx]].offset_addr
-            if offset_diff in [1, 4]:
-                diffs[offset_diff] += 1
-        return offsets_enum_t.WORD_OFFSETS \
-            if diffs[1] > diffs[4] else offsets_enum_t.BYTE_OFFSETS
-
-
-    def _regbank_decode_rows_to_register(self, rows, module_instance_ref, 
-            module_instance_name, regbank_name) :
-        register_name = rows[0][regbank_modules_info["register_name_col"]].value
-        offset_addr =int(rows[0][regbank_modules_info["offset_address_col"]].value)
-        register = register_t(module_instance_ref, register_name, module_instance_name, 
-            regbank_name, offset_addr, 0);
-        reserved_idx = 0
-        for row in rows :
-            is_reserved = False
-            sw_attr = row[regbank_modules_info["sw_attr_col"]].value
-            hw_attr = row[regbank_modules_info["hw_attr_col"]].value
-            subfield_name = row[regbank_modules_info["sub_field_name_col"]].value
-            bit_width = int(row[regbank_modules_info["bit_width_col"]].value)
-            bit_position = row[regbank_modules_info["bit_position_col"]].value
-            assert 'x' not in bit_position, "Invalid x in bit_position field"
-            if ':' in bit_position:
-                [end, start] = re.findall("\d+", bit_position)
-            else:
-                [start] = re.findall("\d+", bit_position)
-                end = start
-            start = int(start, 0); end = int(end, 0)
-            bit_position = list(range(start, end+1))
-            sw_attr = sw_attr
-            hw_attr = hw_attr
-            try:
-                default_val = \
-                    int(row[regbank_modules_info["default_value_col"]].value, 0)
-            except:
-                default_val = 0
-            description = description = \
-                row[regbank_modules_info["description_col"]].value
-            if re.search(regbank_modules_info["reserved_keyword"], subfield_name, 
-                    re.IGNORECASE):
-                subfield_name = regbank_modules_info["reserved_keyword"] + \
-                    str(reserved_idx)
-                reserved_idx += 1
-                is_reserved = True
-            try:
-                assert subfield_name not in dir(register), \
-                "Subfield name already present"
-            except:
-                set_trace()
-                pass
-            setattr(register, subfield_name, 
-                subfield_t(register, subfield_name, register_name, 
-                module_instance_name, regbank_name, bit_width, bit_position, 
-                sw_attr, hw_attr, default_val, description));
-        if register_name=='':
-            return [None, None]
-        else:
-            return [register_name, register];
-
-    def _regbank_get_module_instance(self, module_name, base_addr, offset_type, 
-            module_instance_name):
-        workbook = xlrd.open_workbook(self._regbank_file_name)
-        xl_sheet = workbook.sheet_by_name(module_name)
-        row_idx = 0
-        while row_idx < xl_sheet.nrows:
-            text = xl_sheet.row(row_idx)[0].value
-            if re.search(regbank_modules_info["start_row_header"], text, 
-                    re.IGNORECASE):
-                row_idx += 1    # Skip first row corresponding to header
-                break
-            else:
-                row_idx += 1
-        if row_idx == xl_sheet.nrows:
-            assert 0, "Invalid sheet"
-
-        module_instance = module_instance_t(module_instance_name, 
-            self._regbank_name, base_addr, offset_type)
-
-        while 1:
-            row_line = xl_sheet.row(row_idx)
-            rows = []
-            rows.append(xl_sheet.row(row_idx))
-            row_idx += 1
-            while ((row_idx<xl_sheet.nrows) and 
-                    (xl_sheet.row(row_idx)[regbank_modules_info["offset_address_col"]].value=='')):
-                rows.append(xl_sheet.row(row_idx))
-                row_idx += 1
-            [register_name, register] = \
-                self._regbank_decode_rows_to_register(rows, module_instance,
-                        module_instance_name, self._regbank_name)
-            if register:
-                setattr(module_instance, register_name, register)
-                module_instance._set_size(register._get_offset()+4)
-            if row_idx>=xl_sheet.nrows :
-                break
-        return module_instance
-
-    def _regbank_load_module_instances(self):
-        instance_sheet_name = "top_instances_map"
-        workbook = xlrd.open_workbook(self._regbank_file_name)
-
-        assert instance_sheet_name in workbook.sheet_names(), "Top Level Instances sheet not found"
-        
-        xl_sheet = workbook.sheet_by_name(instance_sheet_name)
-        row_idx = 0
-        while row_idx < xl_sheet.nrows:
-            text = xl_sheet.row(row_idx)[0].value
-            if re.search(regbank_instances_info["start_row_header"], text, re.IGNORECASE):
-                row_idx += 1    # Skip first row corresponding to header
-                break
-            else:
-                row_idx += 1
-        if row_idx == xl_sheet.nrows:
-            assert 0, "Invalid sheet"
-
-        while row_idx < xl_sheet.nrows:
-            module_name = str(xl_sheet.row(row_idx)[regbank_instances_info["module_name_col"]].value)
-            if module_name=='':
-                break
-
-            address_bits = int(float(str(xl_sheet.row(row_idx)[regbank_instances_info["address_bits_col"]].value)))
-            base_address = int(str(xl_sheet.row(row_idx)[regbank_instances_info["base_address_col"]].value), 0)
-            offset_size = int(float(str(xl_sheet.row(row_idx)[regbank_instances_info["offset_size_col"]].value)))
-            module_instance_name = str(xl_sheet.row(row_idx)[regbank_instances_info["instance_name_col"]].value)
-
-            row_idx += 1
+    def _regbank_load_module_instances_from_database(self, database):
+        unwanted_char_pattern = '[^a-zA-Z0-9 \n\.]'
+        regbank_name = database.regbank_name
+        regbank_name = re.sub(unwanted_char_pattern, '_', regbank_name)
+        for i, (module_name, module_info_instance) in enumerate(database.modules.items()):
+            module_instance_name = module_info_instance.module_instance_name
+            module_instance_name = re.sub(unwanted_char_pattern, '_', module_instance_name)
+            module_name = re.sub(unwanted_char_pattern, '_', module_name)
+            base_addr = module_info_instance.base_addr
+            offset_type = module_info_instance.offset_type
+            module_instance = module_instance_t(module_info_instance.module_instance_name, regbank_name, base_addr, offset_type)
+            for j, (register_name, register_info_instance) in enumerate(module_info_instance.registers.items()):
+                register_name = re.sub(unwanted_char_pattern, '_', register_name)
+                register_instance = register_t(module_instance, register_name, module_info_instance.module_instance_name,
+                        regbank_name, register_info_instance.offset_addr, 0);
+                for k, (subfield_name, subfield_info_instance) in enumerate(register_info_instance.subfields.items()):
+                    subfield_name = re.sub(unwanted_char_pattern, '_', subfield_name)
+                    subfield = subfield_t(register_instance, subfield_name, register_name, 
+                        module_info_instance.module_instance_name, regbank_name, subfield_info_instance.bit_width, 
+                        subfield_info_instance.bit_position, 
+                        subfield_info_instance.sw_attr, 
+                        subfield_info_instance.hw_attr, 
+                        subfield_info_instance.default_val, 
+                        subfield_info_instance.description);
+                    register_instance._subfields_db[subfield_name] = subfield
+                module_instance._registers_db[register_name] = register_instance
+            self._module_instances[module_info_instance.module_instance_name] = module_instance
             
-            assert module_instance_name not in self._module_instances.keys()
-            
-            # Use the instance information to load sheets
-            module_instance = self._regbank_get_module_instance(module_name,
-                    base_address, offsets_enum_t.WORD_OFFSETS if offset_size==4 
-                    else offsets_enum_t.BYTE_OFFSETS, module_instance_name)
-            self._module_instances[module_instance_name] = module_instance
 
+                
     def __dir__(self):
         return list(self._module_instances.keys())
 
