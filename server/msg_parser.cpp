@@ -171,7 +171,7 @@ void msg_parser(char *msg_req_buffer, char *msg_resp_buffer, uint32_t *msg_len)
         msg_parser_resp(req->handle, req->req_type, STATUS_OK,
                 req->addr, ret_msg_val);
     }
-#if 1
+#if 0
     {
         uint16_t i;
         printf("Bytes : ");

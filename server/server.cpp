@@ -35,7 +35,7 @@ server::server(uint32_t udp_port, uint32_t tcp_port,
     this->alive_elapsed_time         = 0;
     memset(this->hostIpAddr, 0x00, sizeof(this->hostIpAddr));
     this->client_socket_handle = this->server_socket_handle = this->udp_socket_handle = 0;
-    this->gethost_itf_ipaddr((char *)this->hostIpAddr, sizeof(this->hostIpAddr), itf);
+    this->gethost_itf_ipaddr((char *)this->hostIpAddr, (char *)this->broadcastIpAddr, sizeof(this->hostIpAddr), itf);
 }
 
 void server::stop()
@@ -92,7 +92,7 @@ void server::set_connection_status(server_connection_status status)
     pthread_mutex_unlock(&this->lock);
 }
 
-void server::gethost_itf_ipaddr(char *ip_addr, uint16_t len, const char * itf)
+void server::gethost_itf_ipaddr(char *host_ip_addr, char *broadcast_ip_addr, uint16_t len, const char * itf)
 {
     struct ifaddrs * ifAddrStruct=NULL;
     struct ifaddrs * ifa=NULL;
@@ -109,13 +109,17 @@ void server::gethost_itf_ipaddr(char *ip_addr, uint16_t len, const char * itf)
             char addressBuffer[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
             if (strcmp(ifa->ifa_name, itf)==0) {
-                strcpy(ip_addr, addressBuffer);
-                printf("\n%s\n", ip_addr);
+                strcpy(host_ip_addr, addressBuffer);
+                printf("\nServer IP : %s\n", host_ip_addr);
+                tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_ifu.ifu_broadaddr)->sin_addr;
+                inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+                strcpy(broadcast_ip_addr, addressBuffer);
+                printf("\nBroadCast IP : %s\n", broadcast_ip_addr);
             }
         }
     }
     if (ifAddrStruct!=NULL) freeifaddrs(ifAddrStruct);
-    if ((strlen(ip_addr)==0) && (strlen(ip_addr)<len)) {
+    if ((strlen(host_ip_addr)==0) && (strlen(host_ip_addr)<len)) {
         assert(0, ASSERT_FATAL);
     }
 }
@@ -141,12 +145,12 @@ void server::udp_repeater_loop()
     /* Setup udp socket and broadcast message parameters */
     uint8_t status = 0;
     struct sockaddr_in udp_socket_addr;
-    char broadcast_message[200];
+    char broadcast_message[400];
     int yes = 1;
 
     this->udp_socket_handle = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     assert(this->udp_socket_handle!=0, ASSERT_FATAL);
-    inet_pton(AF_INET, "255.255.255.255", &udp_socket_addr.sin_addr.s_addr);
+    inet_pton(AF_INET, this->broadcastIpAddr, &udp_socket_addr.sin_addr.s_addr);
     udp_socket_addr.sin_port = htons(this->server_udp_transmit_port);
     udp_socket_addr.sin_family = PF_INET;
 

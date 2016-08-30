@@ -44,6 +44,7 @@ class server {
         static void udp_thread_cancel(void *);
         static void tcp_thread_cancel(void *);
         char hostIpAddr[IP_ADDR_LEN];
+        char broadcastIpAddr[IP_ADDR_LEN];
         uint32_t server_udp_transmit_port;
         uint32_t server_tcp_listen_port;
         uint32_t udp_repeat_timeout;
@@ -52,7 +53,7 @@ class server {
         pthread_mutex_t lock;
         server_connection_status connection_status;
         server_connection_status get_connection_status();
-        void gethost_itf_ipaddr(char *ip_addr, uint16_t len, const char * itf);
+        void gethost_itf_ipaddr(char *host_ip_addr, char *broadcast_ip_addr, uint16_t len, const char * itf);
         void set_connection_status(server_connection_status status);
         void udp_repeater_loop();
         void tcp_processor_loop();
