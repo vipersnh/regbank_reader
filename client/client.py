@@ -1,15 +1,17 @@
 from pdb import set_trace
-import threading
 from PyQt4.QtCore import QObject, Qt
 from PyQt4.QtCore import QMutex
 from PyQt4.QtCore import pyqtSignal
 from PyQt4.QtCore import QThread
 from ctypes import *
+from collections import namedtuple
+from itertools import count
 import socket
 import pprint
 import time
 import atexit
 import os
+import threading
 
 MSG_LEN_FIELD_LEN = 2
 
@@ -49,12 +51,18 @@ class msg_req_t (Structure)  :
                 ("req_type",    c_uint),
                 ("msg",         type_union)]
 
+target_t     = namedtuple("target_t", ["ip_addr", "port", "protocol",
+                                       "max_msg_len", "unique_id", "unique_msg"])
+
 class client_t(QObject):
     # Signals
     signal_disconnected = pyqtSignal()
+    inst_counter = count(0)
 
     def __init__(self, server_udp_port=2222) :
         super(client_t, self).__init__()
+        self.instance_idx = next(self.inst_counter)
+        assert self.instance_idx==0
         self.previous_udp_message = []
         self.server_udp_port = server_udp_port
         self.server_connected = False
@@ -63,8 +71,13 @@ class client_t(QObject):
         self.server_unique_id = None
         self.server_unique_msg = None
         self.sync_mutex = QMutex()
-        if __debug__:
-            self._stored_value = 0x00
+        self.is_debug = 0
+        self._stored_value = 0x00
+        self.sock = socket.socket(socket.AF_INET, 
+                                  socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        self.sock.bind((self.local_ip, self.server_udp_port))
 
     def set_server_udp_port(self, server_udp_port):
         self.server_udp_port = server_udp_port
@@ -76,16 +89,11 @@ class client_t(QObject):
         self.server_unique_msg = unique_msg
     
     def get_udp_message(self, timeout) :
-        sock = socket.socket(socket.AF_INET, 
-                             socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        sock.bind((self.local_ip, self.server_udp_port))
-        sock.settimeout(timeout)
         ctime = time.time()
+        self.sock.settimeout(timeout)
         while 1:
             try:
-                data, addr = sock.recvfrom(65535)
+                data, addr = self.sock.recvfrom(65535)
             except :
                 return None
             data = data.decode("utf-8")
@@ -93,8 +101,6 @@ class client_t(QObject):
             vals = []
             for i in msgs :
                 vals.append(i.split(':')[1])
-            sock.close()
-            del sock
             if int(vals[4],0)==self.server_unique_id and vals[5]==self.server_unique_msg:
                 if len(self.previous_udp_message):
                     # Check that this message can come from a single IP address 
@@ -107,6 +113,7 @@ class client_t(QObject):
 
     def disconnect(self) :
         if self.server_connected:
+            self.previous_udp_message = []
             self.server_socket_handle.close()
             self.server_connected = False
             self.signal_disconnected.emit()
@@ -117,11 +124,11 @@ class client_t(QObject):
         msg_bytes = bytearray(msg)
         msg_len = c_ushort(len(msg_bytes))
         msg_bytes[:0] = bytes(msg_len)
-        self.server_socket_handle.send(msg_bytes)
-        resp = self.server_socket_handle.recv(MSG_LEN_FIELD_LEN)
-        msg_len = c_ushort.from_buffer(bytearray(resp)).value
-        self.server_socket_handle.settimeout(2)
         try:
+            self.server_socket_handle.send(msg_bytes)
+            resp = self.server_socket_handle.recv(MSG_LEN_FIELD_LEN)
+            msg_len = c_ushort.from_buffer(bytearray(resp)).value
+            self.server_socket_handle.settimeout(2)
             resp = self.server_socket_handle.recv(msg_len)
             resp_struct = msg_resp_t.from_buffer(bytearray(resp))
         except:
@@ -153,24 +160,36 @@ class client_t(QObject):
     def connect(self, unique_id, unique_msg, timeout):
         self.set_server_id(unique_id)
         self.set_server_msg(unique_msg)
-        while 1:
+        while not self.server_connected:
             msg = self.get_udp_message(timeout)
             if msg:
                 [protocol, ip_addr, port, max_msg_len, server_unique_id, server_unique_msg] = msg
+                target = target_t(ip_addr=ip_addr, port=port, protocol=protocol,
+                        max_msg_len=max_msg_len, unique_id=int(server_unique_id, 0),
+                        unique_msg=server_unique_msg)
+                self.target = target
                 server_unique_id = int(server_unique_id, 0)
                 self.server_socket_handle = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.server_socket_handle.connect((ip_addr, int(port)))
                 self.server_connected = True
                 self.keep_alive_thread = threading.Thread(target=self.keep_alive)
                 self.keep_alive_thread.start()
+                return True
                 break
             else:
                 print("No server found, please start the server.")
+                return False
                 break
 
     def read_address(self, address):
-        if __debug__:
+        if self.is_debug:
             return self._stored_value
+
+        if not self.server_connected:
+            return 0;
+
+        #print("Reading register {0}".format(hex(address)))
+
         msg_read = msg_req_t()
         msg_read.handle = id(address)
         msg_read.req_type = WORD_READ_REQ
@@ -189,9 +208,15 @@ class client_t(QObject):
             return None       # Read failed
 
     def write_address(self, address, value):
-        if __debug__:
+        if self.is_debug:
             self._stored_value = value
             return True
+
+        if not self.server_connected:
+            return False;
+
+        #print("Writing register {0} with {1}".format(hex(address), hex(value)))
+
         msg_write = msg_req_t()
         msg_write.handle = id(address)
         msg_write.req_type = WORD_WRITE_REQ
@@ -208,4 +233,4 @@ class client_t(QObject):
         else:
             return False # Write failed
 
-client = client_t()
+g_client_obj = client_t()

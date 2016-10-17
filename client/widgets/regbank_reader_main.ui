@@ -219,6 +219,11 @@
         </item>
        </layout>
       </widget>
+      <widget class="QWidget" name="tab_2">
+       <attribute name="title">
+        <string>TreeView</string>
+       </attribute>
+      </widget>
       <widget class="QWidget" name="regbankTab">
        <attribute name="title">
         <string>Regbank</string>
@@ -1435,7 +1440,7 @@
      <x>0</x>
      <y>0</y>
      <width>1017</width>
-     <height>29</height>
+     <height>20</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">

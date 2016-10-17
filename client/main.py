@@ -3,13 +3,13 @@ import sys
 import re
 from PyQt4.QtCore import QMutex
 from StructDict import StructDict
-from regbank_parser import offsets_enum_t, is_regbank_sheet_valid
+from regbank_parser import offsets_enum_t
 from hashlib import md5
 from os.path import basename, splitext
 from PyQt4.QtCore import pyqtRemoveInputHook, pyqtSignal, QThread, Qt, qDebug, QObject
 from PyQt4.QtGui import QApplication, QMainWindow, QFileDialog, QDialog, QWidget, QHeaderView, QVBoxLayout, QTableWidgetItem, QMessageBox, QLabel
 from widgets.regbank_reader_main import *
-from regbank_reader_model import model, parse_tib_file, target_t, load_sheet, load_regbank, exec_tib
+from regbank_reader_model import model, parse_tib_file, target_t, exec_tib
 import regbank_reader_model
 from widgets.register_tab import *
 from widgets.status_bar import *
@@ -28,7 +28,10 @@ def get_number_from_string(string):
         return None
         
 def get_string_from_number(number):
-    string = "0x{0:04X}_{1:04X}".format((number & 0xFFFF0000)>>16, number&0xFFFF)
+    try:
+        string = "0x{0:04X}_{1:04X}".format((number & 0xFFFF0000)>>16, number&0xFFFF)
+    except:
+        set_trace()
     return string
 
 class register_table_t (QWidget, Ui_register_tab, QObject) :
@@ -51,7 +54,7 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         self.comboBox_registerAutoReadMode.lineEdit().setAlignment(Qt.AlignCenter)
         self.comboBox_registerAutoReadMode.lineEdit().setReadOnly(True)
 
-        self.tableWidget_subfieldsView.setRowCount(len(self.register.subfields))
+        self.tableWidget_subfieldsView.setRowCount(len(self.register._subfields_db))
         self.tableWidget_subfieldsView.setColumnCount(len(self.view_fields))
         self.tableWidget_subfieldsView.horizontalHeader().setResizeMode(QHeaderView.Stretch)
         self.tableWidget_subfieldsView.verticalHeader().setResizeMode(QHeaderView.Stretch)
@@ -59,21 +62,20 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         headerLabels = []
 #        qDebug("tableWidget_subfieldsView items are set now")
         row_idx = 0
-        for subfield_name in self.register.subfields.keys():
-            subfield = self.register.subfields[subfield_name]
+        for subfield in self.register._subfields_db.values():
             view_field = self.view_fields[0]
             headerLabels.append(view_field.col_name)
-            text = subfield.name
+            text = subfield._subfield_name
             item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
             self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
 
             view_field = self.view_fields[1]
             headerLabels.append(view_field.col_name)
-            start_bit = subfield.bit_position[0]
-            end_bit   = subfield.bit_position[-1]
+            start_bit = subfield._bit_position[0]
+            end_bit   = subfield._bit_position[-1]
             field_info = field_info_t(row_idx=row_idx, col_idx=2, bit_mask=(pow(2, end_bit+1)-1)-(pow(2, start_bit)-1), bit_shift=start_bit)
             self.field_infos.append(field_info)
-            text = str(subfield.bit_width) + " bits in " + str(subfield.bit_position) + " SW_ATTR[" + subfield.sw_attr + "]"
+            text = str(subfield._bit_width) + " bits in " + str(subfield._bit_position) + " SW_ATTR[" + subfield._sw_attr + "]"
             item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
             self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
 
@@ -85,13 +87,13 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
 
             view_field = self.view_fields[3]
             headerLabels.append(view_field.col_name)
-            text = str(subfield.default_val)
+            text = str(subfield._default_val)
             item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
             self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
 
             view_field = self.view_fields[4]
             headerLabels.append(view_field.col_name)
-            text = subfield.description
+            text = subfield._description
             item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
             self.tableWidget_subfieldsView.setItem(row_idx, view_field.col_num, item)
             row_idx += 1 
@@ -102,26 +104,26 @@ class register_table_t (QWidget, Ui_register_tab, QObject) :
         self.slot_update_register_ui()
 
     def slot_update_register_ui(self):
-        sheet = self.model.db[self.register.regbank_name][self.register.sheet_name]
-        register_addr = sheet.base_addr + self.register.offset_addr * (1 
-                if sheet.offset_type == offsets_enum_t.BYTE_OFFSETS else 4)
-        self.lineEdit_registerName.setText("{0} @ {1}".format(self.register.register_name, 
+        curr_module_inst = self.register._module_instance
+        register_addr = curr_module_inst._base_addr + self.register._offset_addr * (1 
+                if curr_module_inst._offset_type == offsets_enum_t.BYTE_OFFSETS else 4)
+        self.lineEdit_registerName.setText("{0} @ {1}".format(self.register._register_name, 
             hex(register_addr)))
-        self.lineEdit_sheetBaseAddr.setText(get_string_from_number(sheet.base_addr))
-        self.lineEdit_registerOffsetAddr.setText(get_string_from_number(self.register.offset_addr))
+        self.lineEdit_sheetBaseAddr.setText(get_string_from_number(curr_module_inst._base_addr))
+        self.lineEdit_registerOffsetAddr.setText(get_string_from_number(self.register._offset_addr))
         self.lineEdit_sheetOffsetType.setText("BYTE_OFFSETS" 
-                if sheet.offset_type == offsets_enum_t.BYTE_OFFSETS else 
+                if curr_module_inst._offset_type == offsets_enum_t.BYTE_OFFSETS else 
                 "WORD_OFFSETS")
 
     def slot_reset_register_ui(self, regbank_name, sheet_name):
-        if (self.register.regbank_name==regbank_name and
-                self.register.sheet_name==sheet_name):
+        if (self.register._regbank_name==regbank_name and
+                self.register._module_instance_name==sheet_name):
             self.lineEdit_registerValue.blockSignals(True)
             self.lineEdit_registerValue.setText("")
             self.lineEdit_registerValue.blockSignals(False)
             row_idx = 0
             self.tableWidget_subfieldsView.blockSignals(True)
-            for subfield_name in self.register.subfields.keys():
+            for subfield_name in self.register._subfields_db.keys():
                 view_field = self.view_fields[2]
                 text = "--"
                 item = QTableWidgetItem(text); item.setTextAlignment(Qt.AlignCenter)
@@ -269,8 +271,6 @@ class regbank_reader_gui_controller_t(QObject):
         self.gui.comboBox_loadedSheetOffsetSel.addItem("BYTE_OFFSETS")
         self.gui.comboBox_loadedSheetOffsetSel.addItem("WORD_OFFSETS")
         self.gui.lineEdit_loadedCalcAddr.setReadOnly(True)
-        self.gui.lineEdit_loadedSheetAddr.returnPressed.connect(self.slot_gui_regbank_sheet_base_addr_changed)
-        self.gui.comboBox_loadedSheetOffsetSel.currentIndexChanged.connect(self.slot_gui_regbank_sheet_offsets_changed)
         
         # Memory Editor Section
         self.memory_radioButtons = dict()
@@ -424,7 +424,7 @@ class regbank_reader_gui_controller_t(QObject):
             regbank_name = splitext(basename(fname))[0]
             if fname not in self.regbanks_path_list.values():
                 self.regbanks_path_list[regbank_name] = fname
-                load_regbank(fname)
+                self.model.load_regbank(fname)
 
     # Memory editor related slots
     def slot_gui_memEditor_update_value(self, value):
@@ -486,10 +486,10 @@ class regbank_reader_gui_controller_t(QObject):
             regbank_name = self.gui.comboBox_loadedRegbankSel.currentText()
             sheet_name = self.gui.comboBox_loadedSheetSel.currentText()
             register_name = self.gui.comboBox_loadedRegisterSel.currentText()
-            sheet = self.model.db[regbank_name][sheet_name]
-            register = sheet.registers[register_name]
-            addr = sheet.base_addr + (register.offset_addr *
-                    (1 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4))
+            curr_module_inst = getattr(self.model.db[regbank_name], sheet_name)
+            curr_register_inst = getattr(curr_module_inst, register_name)
+            addr = curr_module_inst._base_addr + (curr_register_inst._offset_addr *
+                    (1 if curr_module_inst._offset_type==offsets_enum_t.BYTE_OFFSETS else 4))
             self.gui.lineEdit_memEditorAddr.setText(get_string_from_number(addr))
         except:
             pass
@@ -542,38 +542,10 @@ class regbank_reader_gui_controller_t(QObject):
 
     # Regbank related slots
 
-    def slot_gui_regbank_sheet_base_addr_changed(self):
-        regbank_name = self.gui.comboBox_loadedRegbankSel.currentText()
-        sheet_name   = self.gui.comboBox_loadedSheetSel.currentText()
-        orig_base_addr = self.model.db[regbank_name][sheet_name].base_addr
-        try:
-            base_addr = get_number_from_string(self.gui.lineEdit_loadedSheetAddr.text())
-            if base_addr==orig_base_addr:
-                return 
-            self.model.db[regbank_name][sheet_name].base_addr = base_addr
-        except:
-            self.gui.lineEdit_loadedSheetAddr.setText(get_string_from_number(orig_base_addr))
-        self.slot_gui_update_register_ui()
-        self.signal_reset_sheet_register.emit(regbank_name, sheet_name)
-
-    def slot_gui_regbank_sheet_offsets_changed(self, offset_idx):
-        regbank_name = self.gui.comboBox_loadedRegbankSel.currentText()
-        sheet_name   = self.gui.comboBox_loadedSheetSel.currentText()
-        cur_idx = self.gui.comboBox_loadedSheetOffsetSel.currentIndex()
-        self.model.db[regbank_name][sheet_name].offset_type = (
-                offsets_enum_t.BYTE_OFFSETS if cur_idx==0 else 
-                offsets_enum_t.WORD_OFFSETS)
-        self.slot_gui_update_register_ui()
-        self.signal_reset_sheet_register.emit(regbank_name, sheet_name)
-
     def slot_gui_regbank_updated(self):
         self.gui.comboBox_loadedRegbankSel.blockSignals(True)
         for regbank_name in self.model.db.keys():
-            to_load = False
             for sheet_name in self.model.db[regbank_name]:
-                if self.model.db[regbank_name][sheet_name]:
-                    to_load = True
-            if to_load:
                 if self.gui.comboBox_loadedRegbankSel.findText(regbank_name) < 0:
                     self.gui.comboBox_loadedRegbankSel.addItem(regbank_name)
         self.gui.comboBox_loadedRegbankSel.blockSignals(False)
@@ -589,21 +561,22 @@ class regbank_reader_gui_controller_t(QObject):
         if self.sender()==self.gui.comboBox_loadedRegbankSel:
             # Regbank selection changed, update sheets and registers
             self.gui.comboBox_loadedSheetSel.clear()
-            for sheet_name in self.model.db[regbank_name].keys():
-                if self.model.db[regbank_name][sheet_name]:
-                    self.gui.comboBox_loadedSheetSel.addItem(sheet_name)
-            sheet_name = self.gui.comboBox_loadedSheetSel.currentText()
+            for loaded_sheet in self.model.db[regbank_name]._module_instances.keys():
+                self.gui.comboBox_loadedSheetSel.addItem(loaded_sheet)
+            curr_module_inst_name = self.gui.comboBox_loadedSheetSel.currentText()
             self.gui.comboBox_loadedRegisterSel.clear()
             try:
-                for register_name in self.model.db[regbank_name][sheet_name].registers.keys():
+                curr_module_inst = getattr(self.model.db[regbank_name], curr_module_inst_name)
+                for register_name in curr_module_inst._registers_db.keys():
                     self.gui.comboBox_loadedRegisterSel.addItem(register_name)
             except:
                 set_trace()
         elif self.sender()==self.gui.comboBox_loadedSheetSel:
             # Sheet selection changed
             sheet_name = self.gui.comboBox_loadedSheetSel.currentText()
+            curr_module_inst = getattr(self.model.db[regbank_name], sheet_name)
             self.gui.comboBox_loadedRegisterSel.clear()
-            for register_name in self.model.db[regbank_name][sheet_name].registers.keys():
+            for register_name in curr_module_inst._registers_db.keys():
                 self.gui.comboBox_loadedRegisterSel.addItem(register_name)
         elif self.sender()==self.gui.comboBox_loadedRegisterSel:
             # Register selection changed
@@ -628,13 +601,14 @@ class regbank_reader_gui_controller_t(QObject):
         sheet_name    = self.gui.comboBox_loadedSheetSel.currentText()
         register_name = self.gui.comboBox_loadedRegisterSel.currentText()
 
-        sheet = self.model.db[regbank_name][sheet_name]
-        self.gui.lineEdit_loadedSheetAddr.setText(get_string_from_number(sheet.base_addr))
-        self.gui.lineEdit_loadedCalcAddr.setText(get_string_from_number(sheet.base_addr + 
-                sheet.registers[register_name].offset_addr * (1 
-                    if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 4)))
+        curr_module_inst = getattr(self.model.db[regbank_name], sheet_name)
+        curr_register_inst = getattr(curr_module_inst, register_name)
+        self.gui.lineEdit_loadedSheetAddr.setText(get_string_from_number(curr_module_inst._base_addr))
+        self.gui.lineEdit_loadedCalcAddr.setText(get_string_from_number(curr_module_inst._base_addr + 
+                curr_register_inst._offset_addr * (1 
+                    if curr_module_inst._offset_type==offsets_enum_t.BYTE_OFFSETS else 4)))
         self.gui.comboBox_loadedSheetOffsetSel.setCurrentIndex(
-                0 if sheet.offset_type==offsets_enum_t.BYTE_OFFSETS else 1)
+                0 if curr_module_inst._offset_type==offsets_enum_t.BYTE_OFFSETS else 1)
 
         register_id = self.slot_get_register_id()
 
@@ -651,10 +625,7 @@ class regbank_reader_gui_controller_t(QObject):
                 addTabWidget = True
 
         if addTabWidget:
-            register  = sheet.registers[register_name]
-            base_addr = sheet.base_addr
-            offset_type = sheet.offset_type
-            register_widget = register_table_t(register, self.gui.tabWidget_registers, 
+            register_widget = register_table_t(curr_register_inst, self.gui.tabWidget_registers, 
                     self.model, register_id)
             self.signal_reset_sheet_register.connect(register_widget.slot_reset_register_ui)
             self.gui.tabWidget_registers.addTab(register_widget, 

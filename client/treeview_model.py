@@ -1,5 +1,7 @@
 from pdb import set_trace
 from PyQt4 import QtCore, QtGui
+from collections import namedtuple, OrderedDict
+from regbank_parser import *
 
 
 REGNAME_OR_SUBFIELD_COL         = 0     # Column 0 for register-name or subfield-name
@@ -94,7 +96,7 @@ class treeview_model_t (QtCore.QAbstractItemModel):
             return QtCore.QModelIndex()
         
         if not parent.isValid():
-            child = list(self.regbanks.values())[0]
+            child = list(self.regbanks.values())[row]
         else:
             parent = parent.internalPointer()
             if isinstance(parent, OrderedDict):
@@ -149,6 +151,10 @@ class treeview_model_t (QtCore.QAbstractItemModel):
         #print("rowCount = [{0}] for [{1}, {2}]".format(row_count, row, column))
         return row_count
 
+    def exit(self):
+        for rb in self.regbanks.items():
+            rb[1].disconnect()
+
 class treeview_t(QtGui.QTreeView):
     def __init__(self, parent=None):
         super(QtGui.QTreeView, self).__init__(parent)
@@ -156,6 +162,7 @@ class treeview_t(QtGui.QTreeView):
 
     def keyPressEvent(self, event):
         curr_index = self.currentIndex()
+        model = curr_index.model()
         if event.key()==QtCore.Qt.Key_Left:
             if self.isExpanded(curr_index):
                 self.collapse(curr_index)
@@ -179,13 +186,8 @@ class treeview_t(QtGui.QTreeView):
             item = curr_index.internalPointer()
             if isinstance(item, register_t) or isinstance(item, subfield_t):
                 # Update register with latest value
-                pass
-                return
-        elif event.key()==QtCore.Qt.Key_W:
-            item = curr_index.internalPointer()
-            if isinstance(item, register_t) or isinstance(item, subfield_t):
-                # Write register with current gui values
-                pass
+                k = item._value # Just read the value to update it from hw
+                model.dataChanged.emit(QtCore.QModelIndex(), QtCore.QModelIndex())
                 return
         elif event.key()==QtCore.Qt.Key_E:
             item = curr_index.internalPointer()
@@ -197,10 +199,13 @@ class treeview_t(QtGui.QTreeView):
                 return
         QtGui.QTreeView.keyPressEvent(self, event)
 
+    def closeEvent(self, event):
+        self.model().exit()
+        event.accept()
+
 if __name__ == '__main__':
     import sys
     import argparse
-    from regbank_parser import *
     QtCore.pyqtRemoveInputHook()
     app = QtGui.QApplication(sys.argv)
     parser = argparse.ArgumentParser()

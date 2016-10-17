@@ -639,7 +639,7 @@ class Ui_regbank_reader_main(object):
         self.label_18.setText(_translate("regbank_reader_main", "Unique ID of target", None))
         self.lineEdit_unique_id.setText(_translate("regbank_reader_main", "0x00", None))
         self.label_19.setText(_translate("regbank_reader_main", "Unique MSG of target", None))
-        self.lineEdit_unique_msg.setText(_translate("regbank_reader_main", "linux_pc", None))
+        self.lineEdit_unique_msg.setText(_translate("regbank_reader_main", "adml", None))
         self.groupBox_2.setTitle(_translate("regbank_reader_main", "Regbank Initialization", None))
         self.pushButton_loadRegBank.setText(_translate("regbank_reader_main", "Load regbank excel", None))
         self.mainTabWidget.setTabText(self.mainTabWidget.indexOf(self.initializationTab), _translate("regbank_reader_main", "Initialization", None))
