@@ -134,6 +134,8 @@ class regbank_database_t:
         subfields = OrderedDict()
 
         reserved_subfield_idx = 0
+        prev_sw_attr = None
+        prev_hw_attr = None
         for row in rows :
             is_reserved = False
             sw_attr = row[self.regbank_modules_info["sw_attr_col"]].value
@@ -149,8 +151,14 @@ class regbank_database_t:
                 end = start
             start = int(start, 0); end = int(end, 0)
             bit_position = list(range(start, end+1))
-            sw_attr = sw_attr
-            hw_attr = hw_attr
+            if len(sw_attr):
+                prev_sw_attr = sw_attr
+            else:
+                sw_attr = prev_sw_attr
+            if len(hw_attr):
+                prev_hw_attr = hw_attr
+            else:
+                hw_attr = prev_hw_attr
             try:
                 default_val = \
                     int(row[self.regbank_modules_info["default_value_col"]].value, 0)

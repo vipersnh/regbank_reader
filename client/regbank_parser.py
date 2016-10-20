@@ -240,9 +240,10 @@ class register_t(base_t):
             dict.__setattr__(self, item, value)
 
 class module_instance_t(base_t):
-    def __init__(self, module_instance_name, regbank_name, base_address, 
+    def __init__(self, module_name, module_instance_name, regbank_name, base_address, 
             offset_type):
         self._initialized = False
+        self._module_name = module_name
         self._module_instance_name = module_instance_name
         self._regbank_name = regbank_name
         self._base_addr = base_address
@@ -299,11 +300,13 @@ class module_instance_t(base_t):
 
 class regbank_t:
     def __init__(self, regbank_db_fname):
-        database = pickle.load(open(regbank_db_fname, "rb"))
-        print("Reading register bank database {0}".format(database.regbank_name))
+        if type(regbank_db_fname)==str:
+            database = pickle.load(open(regbank_db_fname, "rb"))
+            print("Reading register bank database {0}".format(database.regbank_name))
+        else:
+            database = regbank_db_fname
         self._initialized = False
         self._regbank_name = database.regbank_name
-        self._regbank_file_name = database.regbank_file_name
         self._module_instances = OrderedDict()
         self._initialized = True
         self._regbank_load_module_instances_from_database(database)
@@ -403,34 +406,22 @@ class regbank_t:
         else:
             return self._module_instances[item]
 
-    def _is_sheet_valid_module(sheet_name):
-        workbook = xlrd.open_workbook(self._regbank_file_name)
-        xl_sheet = workbook.sheet_by_name(sheet_name)
-        row_idx = 0
-        while row_idx < xl_sheet.nrows:
-            text = xl_sheet.row(row_idx)[0].value
-            if re.search(regbank_modules_info["start_row_header"], 
-                    text, re.IGNORECASE):
-                row_idx += 1    # Skip first row corresponding to header
-                break
-            else:
-                row_idx += 1
-        if row_idx == xl_sheet.nrows:
-            return False
-        else:
-            return True
-
     def _regbank_load_module_instances_from_database(self, database):
         unwanted_char_pattern = '[^a-zA-Z0-9 \n\.]'
         regbank_name = database.regbank_name
         regbank_name = re.sub(unwanted_char_pattern, '_', regbank_name)
-        for i, (module_name, module_info_instance) in enumerate(database.modules.items()):
+        for i, (module_instance_name, module_info_instance) in enumerate(database.modules.items()):
             module_instance_name = module_info_instance.module_instance_name
             module_instance_name = re.sub(unwanted_char_pattern, '_', module_instance_name)
+            module_name = module_info_instance.module_name
             module_name = re.sub(unwanted_char_pattern, '_', module_name)
             base_addr = module_info_instance.base_addr
             offset_type = module_info_instance.offset_type
-            module_instance = module_instance_t(module_info_instance.module_instance_name, regbank_name, base_addr, offset_type)
+            module_instance = module_instance_t(module_info_instance.module_name, 
+                                                module_info_instance.module_instance_name, 
+                                                regbank_name, 
+                                                base_addr, 
+                                                offset_type)
             for j, (register_name, register_info_instance) in enumerate(module_info_instance.registers.items()):
                 register_name = re.sub(unwanted_char_pattern, '_', register_name)
                 register_instance = register_t(module_instance, register_name, module_info_instance.module_instance_name,
