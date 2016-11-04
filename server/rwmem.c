@@ -9,8 +9,6 @@
 #define PAGE_SIZE ((size_t)getpagesize())
 #define PAGE_MASK ((long)~(PAGE_SIZE - 1))
 
-#define DEBUG_PRINT
-
 static uint8_t * dynamic_mmap(void * addr)
 {
     uint8_t * rv;
@@ -33,30 +31,32 @@ int main(int argc, char *argv[])
     } else {
         uint32_t address = 0;
         uint32_t value = 0;
-        uint32_t * ptr;
+        volatile uint32_t * ptr;
         bool is_read = true;
         switch (argc) {
         case 2:
             sscanf(argv[1], "%i", &address);
-            is_read = false;
+            is_read = true;
+            break;
         case 3:
             sscanf(argv[1], "%i", &address);
             sscanf(argv[2], "%i", &value);
             is_read = false;
+            break;
         default:
+            printf("Unknown error\n");
             exit(-1);
         }
-
-        #if defined(DEBUG_PRINT)
-            printf("Address : 0x%x, Data : 0x%x", address, value);
-        #endif
         
         ptr = (uint32_t*) dynamic_mmap((void*)address);
         if (is_read) {
             printf("Value = 0x%x\n", *ptr);
         } else {
+            volatile uint32_t read_value;
             *ptr = value;
-            printf("Value = 0x%x, Set Value = 0x%x\n", value, *ptr);
+            read_value = *ptr;
+            printf("Value = 0x%x, Set Value = 0x%x\n", value, read_value);
+            printf("Write : %s\n", read_value==value ? "Passed" : "Failed");
         }
     }
 
