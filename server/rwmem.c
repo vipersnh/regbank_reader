@@ -29,18 +29,18 @@ int main(int argc, char *argv[])
         printf("Enter an address to read or enter an address and value to write\n");
         exit(-1);
     } else {
-        uint32_t address = 0;
-        uint32_t value = 0;
+        uint64_t address = 0;
+        uint64_t value = 0;
         volatile uint32_t * ptr;
         bool is_read = true;
+        sscanf(argv[1], "%lli", &address);
+        address &= 0xFFFFFFFF;
         switch (argc) {
         case 2:
-            sscanf(argv[1], "%i", &address);
             is_read = true;
             break;
         case 3:
-            sscanf(argv[1], "%i", &address);
-            sscanf(argv[2], "%i", &value);
+            sscanf(argv[2], "%lli", &value);
             is_read = false;
             break;
         default:
@@ -48,14 +48,14 @@ int main(int argc, char *argv[])
             exit(-1);
         }
         
-        ptr = (uint32_t*) dynamic_mmap((void*)address);
+        ptr = (uint32_t*) dynamic_mmap((void*)(uint32_t)address);
         if (is_read) {
             printf("Value = 0x%x\n", *ptr);
         } else {
             volatile uint32_t read_value;
-            *ptr = value;
+            *ptr = 0xFFFFFFFF & value;
             read_value = *ptr;
-            printf("Value = 0x%x, Set Value = 0x%x\n", value, read_value);
+            printf("Value = 0x%x, Set Value = 0x%x\n", 0xFFFFFFFF & value, read_value);
             printf("Write : %s\n", read_value==value ? "Passed" : "Failed");
         }
     }
